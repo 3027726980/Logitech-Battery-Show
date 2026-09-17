@@ -331,8 +331,18 @@ namespace GPW2BatteryShow
                 _timer.Interval = 1000;   // 保存后 1 秒内按新配置刷新
                 Logger.Cleanup(_settings.LogRetention);   // 立即按新策略清理
                 RedrawIcon(LastReading);
-            });
+            }, GetRealtimeStatus);
             _panel.Show();
+        }
+
+        /// <summary>提供控制面板底部的真实状态快照（不含托盘宽限期美化）。</summary>
+        private BatteryRealtimeStatus GetRealtimeStatus()
+        {
+            return new BatteryRealtimeStatus
+            {
+                Busy = _busy,
+                Reading = LastReading
+            };
         }
     }
 }
