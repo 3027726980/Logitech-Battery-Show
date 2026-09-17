@@ -26,6 +26,17 @@ namespace GPW2BatteryShow
         private bool _notified;                        // 低电量通知防骚扰
         private int? _lastOkPercent;
         private int _failStreak;
+
+        // 拔线宽限期：有线拔出（或接收器链路瞬断）后，鼠标切回无线需数秒链路重建，
+        // 期间托盘保持最后在线显示，避免"在线→离线→在线"跳变；
+        // 宽限期内若探测到接收器在线则无缝切换为接收器状态。
+        // 时长 10s = 热插拔即时重试 + 3s×3 定时重试的窗口（链路重建实测 <3s）；
+        // 再长会让真被拿去充电的设备长时间假在线。
+        private static readonly TimeSpan OfflineGracePeriod = TimeSpan.FromSeconds(10);
+        private BatteryReading _lastOnlineReading;     // 最后一次在线读数（宽限期显示用）
+        private BatteryReading _displayReading;        // 当前应显示的读数（宽限期内 = 最后在线读数）
+        private bool _offline;                         // 当前离线态（检测离线起始沿）
+        private DateTime _offlineSince;                // 连续离线起始时刻
         private readonly TaskScheduler _uiScheduler;
 
         public TrayContext(AppSettings settings)
@@ -167,6 +178,28 @@ namespace GPW2BatteryShow
         {
             LastReading = reading;
 
+            // 宽限期判定：仅影响显示层（display），重试节奏与 failStreak 始终用真实 reading。
+            // 从未在线过（启动后无设备）不适用宽限期，直接显示未检测到设备。
+            BatteryReading display = reading;
+            if (reading.Online)
+            {
+                _offline = false;
+                _lastOnlineReading = reading;
+            }
+            else
+            {
+                if (!_offline)
+                {
+                    _offline = true;
+                    _offlineSince = DateTime.Now;
+                }
+                if (_lastOnlineReading != null && DateTime.Now - _offlineSince < OfflineGracePeriod)
+                {
+                    display = _lastOnlineReading;
+                }
+            }
+            _displayReading = display;
+
             // 轮询节奏：在线常规间隔；离线 3s 快速重试×3（覆盖鼠标切回无线的物理重连窗口）
             // → 10s×5 → 回落常规间隔；连续失败 3 轮时重置设备句柄强制全量重探测
             // （真机日志：不重置则句柄绑在已拔出的旧接口上，永远无法恢复）
@@ -215,11 +248,11 @@ namespace GPW2BatteryShow
                 _lastOkPercent = percent;
             }
 
-            RedrawIcon(reading);
+            RedrawIcon(display);
 
             if (_popup != null && !_popup.IsDisposed && _popup.Visible)
             {
-                _popup.UpdateReading(reading);
+                _popup.UpdateReading(display);
             }
 
             // 快速失败（写失败/否定应答/无效应答）：句柄链路已死的强信号，立即重探测补跑，
@@ -267,9 +300,9 @@ namespace GPW2BatteryShow
             {
                 _popup = new BatteryPopup(delegate { BeginRefresh("popup"); });
             }
-            if (LastReading != null)
+            if (_displayReading != null)
             {
-                _popup.UpdateReading(LastReading);
+                _popup.UpdateReading(_displayReading);   // 与托盘图标显示保持一致（含宽限期状态）
             }
             _popup.ShowNearTray();
             BeginRefresh("popup");   // 打开即刷新
