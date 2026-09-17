@@ -36,7 +36,7 @@ class BatteryState:
 class DeviceManager:
     def __init__(self, hidapi=None):
         self._hid = hidapi if hidapi is not None else hid
-        self._dev = None
+        self._handles = []          # 同一接口的多个 collection 句柄（见下）
         self._device_index = None
         self._feature_index = None
         self._feature_id = None
@@ -45,9 +45,9 @@ class DeviceManager:
     def read_battery(self) -> BatteryState:
         """顶层入口：按需发现设备并读取电量。失败返回 online=False。"""
         try:
-            if self._dev is None:
+            if not self._handles:
                 self._open_and_detect()
-            if self._dev is None:
+            if not self._handles:
                 return BatteryState(None, False, False)
             resp = self._query(build_battery_request(self._device_index,
                                                      self._feature_index))
@@ -66,86 +66,109 @@ class DeviceManager:
     # ---- 内部实现 ----
 
     def _close(self):
-        if self._dev is not None:
+        for h in self._handles:
             try:
-                self._dev.close()
+                h.close()
             except OSError:
                 pass
-        self._dev = self._device_index = self._feature_index = None
+        self._handles = []
+        self._device_index = self._feature_index = None
         self._feature_id = None
 
     def _open_and_detect(self):
+        """按 interface_number 分组打开全部 collection。
+
+        真机实测（C547 接收器 + GPW2 协议 4.2）：同一接口暴露 Col01/Col02
+        两个 collection，短报文走 Col01，长报文应答只会出现在 Col02 的读队列，
+        因此 write 选可写句柄，read 必须轮询组内全部句柄。
+        """
+        groups = {}
         for info in self._hid.enumerate(vendor_id=LOGI_VENDOR_ID):
             if info.get("usage_page") not in USAGE_PAGES:
                 continue
-            try:
-                dev = self._hid.device()
-                dev.open_path(info["path"])
-            except (OSError, ValueError):
-                log.info("接口被占用，跳过: %s", info.get("path"))
+            groups.setdefault(info.get("interface_number"), []).append(info)
+        for infos in groups.values():
+            handles = []
+            for info in infos:
+                try:
+                    dev = self._hid.device()
+                    dev.open_path(info["path"])
+                    handles.append(dev)
+                except (OSError, ValueError):
+                    log.info("接口被占用，跳过: %s", info.get("path"))
+            if not handles:
                 continue
-            direct = self._probe_on(dev, DIRECT_INDEX)
+            direct = self._probe_on(handles, DIRECT_INDEX)
             for slot in RECEIVER_SLOTS:
-                probed = self._probe_on(dev, slot)
+                probed = self._probe_on(handles, slot)
                 if probed is not None:
-                    self._bind(dev, slot, probed)
+                    self._bind(handles, slot, probed)
                     log.info("接收器模式: slot=%d feature=%s", slot, probed)
                     return
             if direct is not None:
-                self._bind(dev, DIRECT_INDEX, direct)
+                self._bind(handles, DIRECT_INDEX, direct)
                 log.info("直连模式: feature=%s", direct)
                 return
-            dev.close()
+            for h in handles:
+                try:
+                    h.close()
+                except OSError:
+                    pass
 
-    def _bind(self, dev, device_index, probed):
-        self._dev = dev
+    def _bind(self, handles, device_index, probed):
+        self._handles = handles
         self._device_index = device_index
         self._feature_index, self._feature_id = probed
 
-    def _probe_on(self, dev, index):
+    def _probe_on(self, handles, index):
         """探测指定 index 上是否有带电量功能的设备 → (feature_index, feature_id) | None
 
         注意：ping 无应答或收到 0x8F 错误帧（真机实测空 slot 行为）都视为离线。
         """
-        ping_resp = self._query_on(dev, build_ping(index))
+        ping_resp = self._query_on(handles, build_ping(index))
         if ping_resp is None or is_hidpp1_error(ping_resp):
             return None
         for fid in BATTERY_FEATURE_IDS:
-            resp = self._query_on(dev, build_get_feature(index, fid))
+            resp = self._query_on(handles, build_get_feature(index, fid))
             if resp is None or is_error(resp):
                 continue
             fidx = parse_feature_index_response(resp)
             if not fidx:
                 continue
-            resp = self._query_on(dev, build_battery_request(index, fidx))
+            resp = self._query_on(handles, build_battery_request(index, fidx))
             if resp is not None and not is_error(resp):
                 return fidx, fid
         return None
 
     def _query(self, request):
-        return self._query_on(self._dev, request)
+        return self._query_on(self._handles, request)
 
-    def _query_on(self, dev, request, timeout_ms=800):
+    def _query_on(self, handles, request, timeout_ms=800):
         """发送请求并收取匹配的应答 payload；超时/不匹配返回 None。"""
-        try:
-            dev.write(request)
-        except (OSError, ValueError):
-            return None
-        for _ in range(3):
+        for h in handles:
             try:
-                data = dev.read(32, timeout_ms=timeout_ms // 3)
+                if h.write(request) > 0:
+                    break
             except (OSError, ValueError):
-                return None
-            if not data:
                 continue
-            payload = extract_payload(data)
-            if payload is None or len(payload) < 4:
-                continue
-            if payload[0] != request[1]:          # 设备索引不匹配
-                continue
-            if (payload[2] & 0x0F) != SW_ID:      # 软件标识不匹配
-                continue
-            return payload
+        else:
+            return None                      # 所有句柄都写不进去（只读）
+        for _ in range(3):
+            for h in handles:
+                try:
+                    data = h.read(32, timeout_ms=timeout_ms // 3)
+                except (OSError, ValueError):
+                    continue
+                if not data:
+                    continue
+                payload = extract_payload(data)
+                if payload is None or len(payload) < 4:
+                    continue
+                if payload[0] != request[1]:          # 设备索引不匹配
+                    continue
+                if (payload[2] & 0x0F) != SW_ID:      # 软件标识不匹配
+                    continue
+                return payload
         return None
 
     def _parse(self, resp):

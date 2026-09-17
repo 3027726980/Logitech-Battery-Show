@@ -3,7 +3,9 @@
 
 class FakeDevice:
     def __init__(self, responses=None, fail_open=False):
-        self.responses = responses or {}   # {完整请求帧 bytes: 应答 payload bytes(不含 report id)}
+        # 注意不能用 `responses or {}`：空 dict 是 falsy，会创建新对象、
+        # 断开与调用方后续填充的共享引用
+        self.responses = {} if responses is None else responses
         self.fail_open = fail_open
         self.opened = False
         self.closed = False
@@ -67,3 +69,30 @@ class _LazyDevice:
     def close(self):
         if self._target:
             self._target.close()
+
+
+# --- 多 collection / 长报文支持（真机 C547 + GPW2 协议 4.2 实测驱动） ---
+
+
+class FakeDeviceV2(FakeDevice):
+    """支持：write 失败模拟（只读 collection）、完整应答帧（含 report id）。"""
+
+    def __init__(self, responses=None, fail_open=False, fail_write=False):
+        super().__init__(responses, fail_open)
+        self.fail_write = fail_write
+
+    def write(self, data):
+        if self.fail_write:
+            raise OSError("collection has no output reports")
+        return super().write(data)
+
+    def read(self, n, timeout_ms=None):
+        req, self.last_write = self.last_write, None
+        if req is None:
+            return []
+        value = self.responses.get(req)
+        if value is None:
+            return []
+        if value and value[0] in (0x10, 0x11):
+            return list(value)                      # 完整应答帧，原样返回
+        return list(bytes([0x10]) + value)          # 旧格式：裸 payload

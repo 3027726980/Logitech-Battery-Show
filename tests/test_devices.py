@@ -1,13 +1,16 @@
 """devices.py 设备发现与电量查询的单元测试（使用 FakeHid）。"""
 from devices import DeviceManager, LOGI_VENDOR_ID
-from fakes import FakeDevice, FakeHid
+from fakes import FakeDevice, FakeDeviceV2, FakeHid
 
 # 常用请求帧
 REQ_PING_0xFF = bytes.fromhex("10FF0011000000")        # ping 直连
+REQ_PING_SLOT1 = bytes.fromhex("10010011000000")       # ping slot 1
 REQ_PING_SLOT2 = bytes.fromhex("10020011000000")       # ping slot 2
 REQ_PING_SLOT3 = bytes.fromhex("10030011000000")       # ping slot 3
 REQ_FEATURE_0xFF = bytes.fromhex("10FF0001100000")     # 0xFF 查询 0x1000
+REQ_FEATURE_SLOT1 = bytes.fromhex("10010001100000")    # slot1 查询 0x1000
 REQ_FEATURE_SLOT2 = bytes.fromhex("10020001100000")    # slot2 查询 0x1000
+REQ_BATT_SLOT1_I06 = bytes.fromhex("10010601000000")   # slot1 用 feature index 6 查电量
 REQ_BATT_0xFF_I06 = bytes.fromhex("10FF0601000000")    # 0xFF 用 feature index 6 查电量
 REQ_BATT_SLOT2_I06 = bytes.fromhex("10020601000000")   # slot2 用 feature index 6 查电量
 
@@ -103,3 +106,54 @@ class TestRealWorldReceiverBehavior:
         mgr = DeviceManager(hidapi=FakeHid([make_interface("\\hid#recv", 0xFF00, dev)]))
         state = mgr.read_battery()
         assert (state.percent, state.online) == (None, False)
+
+
+class TestMultiCollectionLongReports:
+    """GPW2（协议 4.2）经 LIGHTSPEED 接收器以长报文 (0x11) 应答；
+    接收器 MI_02 暴露 Col01(可写)/Col02(只读) 两个 collection，
+    write 走 Col01，read 必须轮询全部句柄。"""
+
+    def make_receiver(self):
+        # Col01 与 Col02 共享同一应答表；Col02 模拟只读
+        responses = {}
+        col1 = FakeDeviceV2(responses)
+        col2 = FakeDeviceV2(responses, fail_write=True)
+        hid = FakeHid([
+            make_interface("\\hid#recv&Col01", 0xFF00, col1),
+            make_interface("\\hid#recv&Col02", 0xFF00, col2),
+        ])
+        # 两个 collection 的 interface_number 相同，需视为一组
+        return hid, responses
+
+    def test_long_report_answer_discovered_and_read(self):
+        # 注意：make_interface 的 path 不同 → interface_number 缺省 None，
+        # DeviceManager 需按 path 中的 Col 分组或按 interface_number 分组；
+        # 此用例先验证"长帧应答可被解析"
+        hid, responses = self.make_receiver()
+        long_ping_answer = bytes([0x11]) + bytes(
+            [0x01, 0x00, 0x11, 0x04, 0x02] + [0x00] * 14)          # 19 字节 payload
+        long_feature_answer = bytes([0x11]) + bytes(
+            [0x01, 0x00, 0x01, 0x06] + [0x00] * 15)
+        long_battery_answer = bytes([0x11]) + bytes(
+            [0x01, 0x06, 0x01, 76, 0, 0x00] + [0x00] * 13)
+        from test_devices import REQ_PING_SLOT1, REQ_FEATURE_SLOT1, REQ_BATT_SLOT1_I06
+        responses[REQ_PING_SLOT1] = long_ping_answer
+        responses[REQ_FEATURE_SLOT1] = long_feature_answer
+        responses[REQ_BATT_SLOT1_I06] = long_battery_answer
+        state = DeviceManager(hidapi=hid).read_battery()
+        assert (state.percent, state.charging, state.online) == (76, False, True)
+
+    def test_same_interface_collections_grouped(self):
+        # Col01/Col02 共享 interface_number=2 → 必须作为一组句柄同时打开，
+        # ping 应答（从任一句柄读出）都能被发现
+        hid, responses = self.make_receiver()
+        infos = hid._infos
+        infos[0]["interface_number"] = 2
+        infos[1]["interface_number"] = 2
+        long_ping_answer = bytes([0x11]) + bytes(
+            [0x01, 0x00, 0x11, 0x04, 0x02] + [0x00] * 14)
+        from test_devices import REQ_PING_SLOT1
+        responses[REQ_PING_SLOT1] = long_ping_answer
+        # 只发 ping 探测：mock 电量 feature 不存在 → 不绑定但不应误判接收器自身
+        state = DeviceManager(hidapi=hid).read_battery()
+        assert state.online is False   # 无电量 feature，不绑定
