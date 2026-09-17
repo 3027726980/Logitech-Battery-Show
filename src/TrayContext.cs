@@ -22,6 +22,7 @@ namespace GPW2BatteryShow
         private Icon _currentIcon;
         private bool _busy;                            // 后台查询去重
         private bool _pendingRefresh;                  // 忙碌期间有热插拔事件请求刷新
+        private volatile bool _hotplugSeen;            // 热插拔事件合并标志（USB 枚举时 26ms 内可达 6 连发）
         private bool _notified;                        // 低电量通知防骚扰
         private int? _lastOkPercent;
         private int _failStreak;
@@ -32,9 +33,11 @@ namespace GPW2BatteryShow
             _settings = settings;
             _uiScheduler = TaskScheduler.FromCurrentSynchronizationContext();
 
-            // 热插拔事件驱动：接收器/鼠标插拔立即触发刷新（不再苦等轮询周期）
+            // 热插拔事件驱动：接收器/鼠标插拔立即触发刷新（不再苦等轮询周期）。
+            // 事件风暴只置标志：多个事件合并为一次重探测，由 BeginRefresh 消费。
             DeviceList.Local.Changed += delegate
             {
+                _hotplugSeen = true;
                 Logger.Write("热插拔事件触发");
                 Task.Factory.StartNew(delegate { BeginRefresh("热插拔"); },
                     System.Threading.CancellationToken.None,
@@ -118,7 +121,7 @@ namespace GPW2BatteryShow
         private void ManualRefresh()
         {
             Logger.Write("手动刷新触发");
-            _device.RequestReprobe();
+            _device.InvalidateDiscovery();   // 手动刷新=强制全量重探测（清除冷却与黑名单）
             _tray.Text = "正在刷新…";
             BeginRefresh("手动");
         }
@@ -133,6 +136,15 @@ namespace GPW2BatteryShow
                 return;
             }
             _busy = true;
+            if (_hotplugSeen)
+            {
+                // 热插拔意味着设备格局可能变化（插线转直连/换口/重新配对）：
+                // 丢弃旧句柄并清除冷却与黑名单，本次查询直接全量重探测，
+                // 不再带着绑定在旧链路上的句柄空转（真机日志：旧句柄重试浪费 ~6 秒）
+                _hotplugSeen = false;
+                Logger.Write("热插拔: 丢弃旧句柄，全量重探测");
+                _device.InvalidateDiscovery();
+            }
             Task.Factory.StartNew(delegate
             {
                 return _device.ReadBattery();
@@ -208,6 +220,15 @@ namespace GPW2BatteryShow
             if (_popup != null && !_popup.IsDisposed && _popup.Visible)
             {
                 _popup.UpdateReading(reading);
+            }
+
+            // 快速失败（写失败/否定应答/无效应答）：句柄链路已死的强信号，立即重探测补跑，
+            // 不等 failStreak 节奏（真机日志：等 failStreak=3 才重探浪费 ~6 秒）。
+            // 纯超时不会置此标记，偶发抖动仍走 3s 节奏，不会造成探测风暴。
+            if (reading.NeedReprobe)
+            {
+                _device.RequestReprobe();
+                BeginRefresh("快速失败补跑");
             }
         }
 

@@ -21,6 +21,9 @@ config.local.json
 config.json
 config.json.bak
 
+# 设备发现状态（运行时数据，含本机 HID 路径标识）
+device_state.json
+
 # IDE
 .idea/
 .vscode/
