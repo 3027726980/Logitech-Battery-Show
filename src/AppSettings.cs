@@ -15,9 +15,10 @@ namespace GPW2BatteryShow
         public bool PopupOnClick = true;          // 左键单击是否展开电量卡片
         public string LogRetention = "7days";     // session | 7days | 30days | all
 
+        /// <summary>配置目录：跟随 exe 所在目录（便携式风格；日志则在同级的 logs 子目录）。</summary>
         private static string ConfigDirectory
         {
-            get { return Logger.LogDirectory; }
+            get { return AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\', '/'); }
         }
 
         private static string ConfigPath
