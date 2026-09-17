@@ -35,7 +35,9 @@ namespace GPW2BatteryShow
             // 热插拔事件驱动：接收器/鼠标插拔立即触发刷新（不再苦等轮询周期）
             DeviceList.Local.Changed += delegate
             {
-                Task.Factory.StartNew(BeginRefresh, System.Threading.CancellationToken.None,
+                Logger.Write("热插拔事件触发");
+                Task.Factory.StartNew(delegate { BeginRefresh("热插拔"); },
+                    System.Threading.CancellationToken.None,
                     System.Threading.Tasks.TaskCreationOptions.None, _uiScheduler);
             };
 
@@ -105,7 +107,7 @@ namespace GPW2BatteryShow
             };
 
             _timer = new Timer { Interval = 2000 };   // 启动后 2 秒内出首次读数
-            _timer.Tick += delegate { BeginRefresh(); };
+            _timer.Tick += delegate { BeginRefresh("定时轮询"); };
             _timer.Start();
         }
 
@@ -118,11 +120,13 @@ namespace GPW2BatteryShow
             Logger.Write("手动刷新触发");
             _device.RequestReprobe();
             _tray.Text = "正在刷新…";
-            BeginRefresh();
+            BeginRefresh("手动");
         }
 
-        private void BeginRefresh()
+        private void BeginRefresh(string source)
         {
+            Logger.Write(string.Format(
+                "BeginRefresh({0}): busy={1} failStreak={2}", source, _busy, _failStreak));
             if (_busy)
             {
                 _pendingRefresh = true;   // 热插拔事件密集时首个事件处理完后立即补跑
@@ -142,7 +146,7 @@ namespace GPW2BatteryShow
                 if (_pendingRefresh)
                 {
                     _pendingRefresh = false;
-                    BeginRefresh();
+                    BeginRefresh("pending补跑");
                 }
             }, TaskScheduler.FromCurrentSynchronizationContext());
         }
@@ -157,6 +161,9 @@ namespace GPW2BatteryShow
                 ? _settings.PollIntervalSec
                 : 10;
             _timer.Interval = seconds * 1000;
+            Logger.Write(string.Format("ApplyReading: online={0} percent={1} failStreak={2} 下一轮={3}s",
+                reading.Online, reading.Percent.HasValue ? reading.Percent.Value.ToString() : "null",
+                _failStreak, seconds));
 
             // 低电量通知：跌破阈值只提醒一次，回升 阈值+5 后重置
             if (reading.Online && reading.Percent.HasValue)
@@ -217,14 +224,14 @@ namespace GPW2BatteryShow
         {
             if (_popup == null || _popup.IsDisposed)
             {
-                _popup = new BatteryPopup(BeginRefresh);
+                _popup = new BatteryPopup(delegate { BeginRefresh("popup"); });
             }
             if (LastReading != null)
             {
                 _popup.UpdateReading(LastReading);
             }
             _popup.ShowNearTray();
-            BeginRefresh();   // 打开即刷新
+            BeginRefresh("popup");   // 打开即刷新
         }
 
         private void ShowControlPanel()
