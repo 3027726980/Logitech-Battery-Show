@@ -151,37 +151,36 @@ namespace GPW2BatteryShow
         }
 
         /// <summary>
-        /// 综合（combo）：电池轮廓占满画布（1,6)-(28,28)，
-        /// 内部上方嵌前景色数字（深浅任务栏自适应，清晰可读）、
-        /// 底部一条随电量伸缩的状态色填充长条。
+        /// 综合（combo）：左侧小电池（轮廓+电量填充），右侧数字在电池外面，
+        /// 数字用前景色（白/黑自适应）保证清晰。
         /// </summary>
         private static void DrawComboBattery(Graphics g, Color foreground, Color accent, int percent)
         {
+            // 左侧小电池：主体 (1,11)-(13,23)，正极凸起 (13,14)-(15,20)
             using (Pen pen = new Pen(foreground, 2f))
             {
-                g.DrawPath(pen, RoundedRect(1, 6, 27, 22, 4));
+                g.DrawPath(pen, RoundedRect(1, 11, 12, 12, 2));
             }
             using (Brush brush = new SolidBrush(foreground))
             {
-                g.FillRectangle(brush, 29, 12, 3, 10);   // 正极凸起
+                g.FillRectangle(brush, 13, 14, 2, 6);
             }
-
-            // 底部电量填充长条（状态色，内框宽 24，随电量伸缩）
-            int barMaxWidth = 24;
+            // 内部电量填充（横向，随电量伸缩）
+            int barMaxWidth = 8;
             int barWidth = (int)Math.Round(barMaxWidth * Math.Min(percent, 100) / 100.0);
             using (Brush brush = new SolidBrush(accent))
             {
-                g.FillRectangle(brush, 3, 23, barWidth, 4);
+                g.FillRectangle(brush, 3, 13, barWidth, 8);
             }
 
-            // 数字放上半区，用前景色（白/黑自适应）保证清晰
+            // 右侧数字（电池外，前景色保证清晰）
             string text = percent.ToString();
-            int fontSize = text.Length >= 3 ? 11 : 14;
+            int fontSize = text.Length >= 3 ? 12 : 16;
             using (Font font = new Font("Segoe UI", fontSize, FontStyle.Bold, GraphicsUnit.Pixel))
             {
                 SizeF size = g.MeasureString(text, font);
-                float x = (1 + 28) / 2f - size.Width / 2f;
-                float y = 7f + (15f - size.Height) / 2f;
+                float x = 16f + (16f - size.Width) / 2f;
+                float y = (32f - size.Height) / 2f;
                 using (Brush brush = new SolidBrush(foreground))
                 {
                     g.DrawString(text, font, brush, x, y);
