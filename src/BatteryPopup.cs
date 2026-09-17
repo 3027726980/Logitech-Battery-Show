@@ -124,9 +124,7 @@ namespace GPW2BatteryShow
             }
             int percent = reading.Percent ?? 0;
             _percentLabel.Text = percent + "%";
-            _percentLabel.ForeColor = reading.Charging
-                ? Color.FromArgb(0, 150, 199)
-                : TrayIconRenderer.PickColor(percent, false, true);
+            _percentLabel.ForeColor = TrayIconRenderer.PickColor(percent, reading.Charging, true, 20);
             string source = string.IsNullOrEmpty(reading.Source) ? "" : reading.Source + " · ";
             _statusLabel.Text = source + (reading.Charging ? "充电中" : "使用中");
             _bar.Value = Math.Min(percent, 100);

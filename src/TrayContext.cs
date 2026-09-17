@@ -2,6 +2,7 @@ using System;
 using System.Drawing;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using HidSharp;
 
 namespace GPW2BatteryShow
 {
@@ -23,10 +24,19 @@ namespace GPW2BatteryShow
         private bool _notified;                        // 低电量通知防骚扰
         private int? _lastOkPercent;
         private int _failStreak;
+        private readonly TaskScheduler _uiScheduler;
 
         public TrayContext(AppSettings settings)
         {
             _settings = settings;
+            _uiScheduler = TaskScheduler.FromCurrentSynchronizationContext();
+
+            // 热插拔事件驱动：接收器/鼠标插拔立即触发刷新（不再苦等轮询周期）
+            DeviceList.Local.Changed += delegate
+            {
+                Task.Factory.StartNew(BeginRefresh, System.Threading.CancellationToken.None,
+                    System.Threading.Tasks.TaskCreationOptions.None, _uiScheduler);
+            };
 
             var menu = new ContextMenuStrip();
             menu.Items.Add("立即刷新", null, delegate { BeginRefresh(); });
@@ -80,7 +90,7 @@ namespace GPW2BatteryShow
 
             _tray = new NotifyIcon
             {
-                Icon = _currentIcon = TrayIconRenderer.DrawIcon(null, false, false, _settings.IconStyle, TrayIconRenderer.IsDarkTaskbar()),
+                Icon = _currentIcon = TrayIconRenderer.DrawIcon(null, false, false, _settings.IconStyle, TrayIconRenderer.IsDarkTaskbar(), _settings.LowBatteryThreshold),
                 Text = "GPW2 电量显示",
                 ContextMenuStrip = menu,
                 Visible = true
@@ -166,7 +176,7 @@ namespace GPW2BatteryShow
             bool online = reading != null && reading.Online;
 
             Icon newIcon = TrayIconRenderer.DrawIcon(percent, charging, online,
-                _settings.IconStyle, dark);
+                _settings.IconStyle, dark, _settings.LowBatteryThreshold);
             var old = _currentIcon;
             _tray.Icon = _currentIcon = newIcon;
             if (old != null)

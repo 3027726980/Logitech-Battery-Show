@@ -3,7 +3,7 @@ using System;
 namespace GPW2BatteryShow
 {
     /// <summary>
-    /// 罗技 HID++ 2.0 协议纯逻辑层：帧构造、应答解析。
+    /// 罗技 HID++ 2.0 协议纯逻辑层：帧构造、应答解析。无 IO 依赖。
     ///
     /// 报文布局（剥掉 Report ID 后的 payload）：
     ///   payload[0] = 设备索引（有线直连 0xFF，接收器配对 slot 1-6）
@@ -11,10 +11,16 @@ namespace GPW2BatteryShow
     ///   payload[2] = (function 左移 4) | SwId
     ///   payload[3:] = 参数/应答数据
     ///
-    /// 真机验证过的行为（GPW2 + C547 LIGHTSPEED 接收器）：
+    /// 真机验证过的行为（GPW2 + C547 LIGHTSPEED 接收器，2026-09-17）：
     ///   1. 短请求经 Col01 写入；GPW2（协议 4.2）的长报文应答只会出现在 Col02 读队列
     ///   2. 对空 slot 或接收器自身发请求，接收器代回 0x8F 错误帧而非静默超时
-    ///   3. GPW2 对 0x1000 声称支持但电量查询回全 0 无效帧，需回退 0x1004 电压
+    ///   3. GPW2 电量走 UnifiedBattery feature（ID 0x1004，index 动态分配）：
+    ///      func 0 是能力描述（不是电量！），func 1 GetBatteryInfo：
+    ///        参数区[0] = SOC 百分比 0-100
+    ///        参数区[1] = 电量档位枚举
+    ///        参数区[2] = 充电状态（0=放电 1=充电）
+    ///        参数区[3] = 外接电源（0=未接 1=已接）
+    ///   4. 有线鼠标（GPW2 充电线插电脑，PID 0xC09B）会对 0xFF 和全部 slot 都应答
     /// </summary>
     internal static class LogitechHidpp
     {
@@ -23,9 +29,8 @@ namespace GPW2BatteryShow
         public const byte SwId = 0x1;                 // 软件标识，请求/应答匹配用（1-15 任取）
 
         public const ushort RootFeatureId = 0x0000;
-        public const ushort BatteryStatusId = 0x1000;
-        public const ushort AdcMeasurementId = 0x1004;
-        public static readonly ushort[] BatteryFeatureIds = new ushort[] { BatteryStatusId, AdcMeasurementId };
+        public const ushort UnifiedBatteryId = 0x1004;   // UnifiedBattery（GPW2 唯一可用电量 feature）
+        public static readonly ushort[] BatteryFeatureIds = new ushort[] { UnifiedBatteryId };
 
         /// <summary>构造 HID++ 短请求帧（含 Report ID 共 7 字节），parameters 最多 3 字节。</summary>
         public static byte[] BuildShort(byte deviceIndex, byte featureIndex, int function, params byte[] parameters)
@@ -61,10 +66,10 @@ namespace GPW2BatteryShow
                 (byte)((featureId >> 8) & 0xFF), (byte)(featureId & 0xFF));
         }
 
-        /// <summary>电量 feature func 0 请求（0x1000 与 0x1004 共用 func 0）。</summary>
+        /// <summary>UnifiedBattery func 1 GetBatteryStatus：读 SOC 百分比与充电状态。</summary>
         public static byte[] BuildBatteryRequest(byte deviceIndex, byte featureIndex)
         {
-            return BuildShort(deviceIndex, featureIndex, 0x00);
+            return BuildShort(deviceIndex, featureIndex, 0x01);
         }
 
         /// <summary>
@@ -112,69 +117,28 @@ namespace GPW2BatteryShow
         }
 
         /// <summary>
-        /// 0x1000 GetBatteryLevelStatus 应答 → 电量百分比与充电状态。
-        /// payload[3]=level, payload[5]=status（0=放电 1=充电 2=接近充满）。
+        /// UnifiedBattery func 1 GetBatteryStatus 应答 → 电量与充电状态。
+        /// 参数区（payload[3] 起）：[0]=SOC 百分比、[2]=充电状态（0=放电 1=充电）、[3]=外接电源。
         /// </summary>
-        public static bool TryParseBatteryStatus(byte[] payload, out int percent, out bool charging)
+        public static bool TryParseUnifiedBattery(byte[] payload, out int percent, out bool charging, out bool externalPower)
         {
             percent = 0;
             charging = false;
-            if (payload == null || payload.Length < 6)
+            externalPower = false;
+            if (payload == null || payload.Length < 7)
             {
                 return false;
             }
             percent = payload[3];
+            byte chargeStatus = payload[5];
+            byte powerFlag = payload[6];
             if (percent > 100)
             {
                 return false;
             }
-            byte status = payload[5];
-            charging = status == 0x01 || status == 0x02;
+            charging = chargeStatus == 0x01;              // 0=放电 1=充电（0x02 充满亦不算充电中）
+            externalPower = powerFlag != 0;
             return true;
-        }
-
-        /// <summary>
-        /// 0x1004 ADC 应答 → payload[3..4] 小端电压 mV，按锂电曲线换算百分比。
-        /// 电压超出 [3000, 4500] 视为无效。0x1004 不含充电状态，固定 false。
-        /// </summary>
-        public static bool TryParseAdcMeasurement(byte[] payload, out int percent, out bool charging)
-        {
-            percent = 0;
-            charging = false;
-            if (payload == null || payload.Length < 6)
-            {
-                return false;
-            }
-            int mv = payload[3] | (payload[4] << 8);
-            if (mv < 3000 || mv > 4500)
-            {
-                return false;
-            }
-            percent = VoltageToPercent(mv);
-            return true;
-        }
-
-        // 锂电（3.7V 标称）分段线性曲线：电压 mV → 百分比
-        private static readonly int[] CurveMv = new int[] { 4200, 4050, 3900, 3780, 3680, 3580, 3500, 3350, 3000 };
-        private static readonly int[] CurvePercent = new int[] { 100, 90, 75, 55, 35, 18, 8, 1, 0 };
-
-        /// <summary>按分段线性锂电曲线把电压 mV 换算为百分比 0-100。</summary>
-        public static int VoltageToPercent(int mv)
-        {
-            if (mv >= CurveMv[0])
-            {
-                return 100;
-            }
-            for (int i = 0; i < CurveMv.Length - 1; i++)
-            {
-                if (mv >= CurveMv[i + 1])
-                {
-                    int v1 = CurveMv[i], v2 = CurveMv[i + 1];
-                    int p1 = CurvePercent[i], p2 = CurvePercent[i + 1];
-                    return (int)Math.Round(p1 + (p2 - p1) * (double)(mv - v1) / (v2 - v1));
-                }
-            }
-            return 0;
         }
     }
 }

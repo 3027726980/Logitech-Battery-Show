@@ -119,10 +119,13 @@ namespace LogiDiag
                     continue;
                 }
                 int fidx = gr[3];
-                byte[] br = Query(channels, Frame(index, (byte)fidx, 0x00));
-                Console.WriteLine("  feature 0x" + fid.ToString("X4") + " -> idx=0x" +
-                    fidx.ToString("X2") + " raw: " +
-                    (br == null ? "no reply" : BitConverter.ToString(br)));
+                for (byte fn = 0; fn <= 2; fn++)
+                {
+                    byte[] br = Query(channels, Frame(index, (byte)fidx, fn));
+                    Console.WriteLine("  feature 0x" + fid.ToString("X4") + " idx=0x" +
+                        fidx.ToString("X2") + " func=" + fn + " raw: " +
+                        (br == null ? "no reply" : BitConverter.ToString(br)));
+                }
             }
         }
 

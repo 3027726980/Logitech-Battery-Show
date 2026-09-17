@@ -30,6 +30,10 @@ namespace GPW2BatteryShow
 
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
+            // 显式安装 WinForms 同步上下文：ApplicationContext 构造早于消息循环，
+            // 否则 TaskScheduler.FromCurrentSynchronizationContext 会抛异常
+            System.Threading.SynchronizationContext.SetSynchronizationContext(
+                new System.Windows.Forms.WindowsFormsSynchronizationContext());
             try
             {
                 Application.Run(new TrayContext(AppSettings.Load()));

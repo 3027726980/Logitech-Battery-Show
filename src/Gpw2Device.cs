@@ -68,17 +68,12 @@ namespace GPW2BatteryShow
                         return BatteryReading.Offline(null);
                     }
                     byte[] request = LogitechHidpp.BuildBatteryRequest(_deviceIndex, _featureIndex);
-                    for (int attempt = 0; attempt < 3; attempt++)
+                    for (int attempt = 0; attempt < 2; attempt++)
                     {
-                        byte[] resp = QueryOn(_streams, request, 800);
-                        int percent;
-                        bool charging;
-                        if (TryParseAnswer(_featureId, resp, out percent, out charging))
+                        byte[] resp = QueryOn(_streams, request, 500);
+                        int percent; bool charging; bool externalPower;
+                        if (TryParseAnswer(resp, out percent, out charging, out externalPower))
                         {
-                            if (_deviceIndex == DirectIndex)
-                            {
-                                charging = true;   // 有线直连即外接电源（0x1004 本身无充电位）
-                            }
                             _lastPercent = percent;
                             return new BatteryReading
                             {
@@ -88,9 +83,9 @@ namespace GPW2BatteryShow
                                 Source = _deviceIndex == DirectIndex ? "有线直连" : "接收器"
                             };
                         }
-                        if (attempt < 2)
+                        if (attempt < 1)
                         {
-                            Thread.Sleep(300);
+                            Thread.Sleep(150);
                         }
                     }
                     // 休眠/形态变化/持续超时：丢弃句柄，下次重新探测；保留已知电量
@@ -241,14 +236,14 @@ namespace GPW2BatteryShow
         /// <summary>探测指定 index 上是否有带电量功能的设备，null 表示离线/无电量功能。</summary>
         private ProbeResult ProbeOn(List<OpenedStream> streams, byte index)
         {
-            byte[] pingResp = QueryOn(streams, LogitechHidpp.BuildPing(index), 400);
+            byte[] pingResp = QueryOn(streams, LogitechHidpp.BuildPing(index), 300);
             if (pingResp == null || LogitechHidpp.IsHidpp1Error(pingResp))
             {
                 return null;   // 无应答或 0x8F 错误帧（空 slot 真机行为）
             }
             foreach (ushort featureId in LogitechHidpp.BatteryFeatureIds)
             {
-                byte[] resp = QueryOn(streams, LogitechHidpp.BuildGetFeature(index, featureId), 400);
+                byte[] resp = QueryOn(streams, LogitechHidpp.BuildGetFeature(index, featureId), 300);
                 if (resp == null || LogitechHidpp.IsError(resp))
                 {
                     continue;
@@ -258,11 +253,11 @@ namespace GPW2BatteryShow
                 {
                     continue;
                 }
-                resp = QueryOn(streams, LogitechHidpp.BuildBatteryRequest(index, (byte)featureIndex), 400);
-                int percent; bool charging;
-                // 必须验证应答可解析出有效电量（GPW2 对 0x1000 回全 0 帧，误绑会显示 0%）
+                resp = QueryOn(streams, LogitechHidpp.BuildBatteryRequest(index, (byte)featureIndex), 300);
+                int percent; bool charging; bool externalPower;
+                // 必须验证 func1 应答可解析出有效 SOC，防止误绑到无电量 feature
                 if (resp != null && !LogitechHidpp.IsError(resp)
-                    && TryParseAnswer(featureId, resp, out percent, out charging))
+                    && TryParseAnswer(resp, out percent, out charging, out externalPower))
                 {
                     return new ProbeResult { FeatureIndex = (byte)featureIndex, FeatureId = featureId };
                 }
@@ -330,21 +325,14 @@ namespace GPW2BatteryShow
             return null;
         }
 
-        private static bool TryParseAnswer(ushort featureId, byte[] payload, out int percent, out bool charging)
+        private static bool TryParseAnswer(byte[] payload, out int percent, out bool charging, out bool externalPower)
         {
-            if (payload == null || LogitechHidpp.IsError(payload))
-            {
-                percent = 0;
-                charging = false;
-                return false;
-            }
-            bool ok = featureId == LogitechHidpp.BatteryStatusId
-                ? LogitechHidpp.TryParseBatteryStatus(payload, out percent, out charging)
-                : LogitechHidpp.TryParseAdcMeasurement(payload, out percent, out charging);
+            bool ok = LogitechHidpp.TryParseUnifiedBattery(payload, out percent, out charging, out externalPower);
             if (!ok || percent <= 0)   // 全 0 帧等无效应答
             {
                 percent = 0;
                 charging = false;
+                externalPower = false;
                 return false;
             }
             return true;

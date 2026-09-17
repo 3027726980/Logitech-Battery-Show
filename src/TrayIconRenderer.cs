@@ -16,16 +16,12 @@ namespace GPW2BatteryShow
         [DllImport("user32.dll", SetLastError = true)]
         private static extern bool DestroyIcon(IntPtr hIcon);
 
-        private static readonly Color OkColor = Color.FromArgb(76, 175, 80);        // 绿
-        private static readonly Color LowColor = Color.FromArgb(255, 193, 7);       // 黄
-        private static readonly Color CriticalColor = Color.FromArgb(244, 67, 54);  // 红
-        private static readonly Color ChargingColor = Color.FromArgb(0, 200, 255);  // 青
-        private static readonly Color OfflineColor = Color.FromArgb(158, 158, 158); // 灰
-        private static readonly Color LightForeground = Color.FromArgb(230, 230, 230); // 深色任务栏前景
-        private static readonly Color DarkForeground = Color.FromArgb(60, 60, 60);     // 浅色任务栏前景
-
-        private const int LowThreshold = 20;
-        private const int CriticalThreshold = 10;
+        private static readonly Color ChargingColor = Color.FromArgb(76, 175, 80);  // 充电中：绿
+        private static readonly Color MidColor = Color.FromArgb(255, 193, 7);       // 中电量：黄
+        private static readonly Color LowColor = Color.FromArgb(244, 67, 54);       // 低电量：红
+        private static readonly Color NormalColor = Color.White;                     // 正常：白
+        private static readonly Color OfflineColor = Color.FromArgb(158, 158, 158); // 离线：灰
+        private const int MidThreshold = 50;
 
         /// <summary>读注册表 AppsUseLightTheme；缺失/异常按 Win11 默认深色处理。</summary>
         public static bool IsDarkTaskbar()
@@ -51,7 +47,8 @@ namespace GPW2BatteryShow
             return true;
         }
 
-        public static Color PickColor(int? percent, bool charging, bool online)
+        /// <summary>状态 → 图标主色：充电绿 / 低电量红(≤阈值) / 中电量黄(≤50) / 正常白。</summary>
+        public static Color PickColor(int? percent, bool charging, bool online, int lowThreshold)
         {
             if (!online || !percent.HasValue)
             {
@@ -61,20 +58,20 @@ namespace GPW2BatteryShow
             {
                 return ChargingColor;
             }
-            if (percent.Value <= CriticalThreshold)
-            {
-                return CriticalColor;
-            }
-            if (percent.Value <= LowThreshold)
+            if (percent.Value <= lowThreshold)
             {
                 return LowColor;
             }
-            return OkColor;
+            if (percent.Value <= MidThreshold)
+            {
+                return MidColor;
+            }
+            return NormalColor;
         }
 
         /// <summary>状态 → 32×32 托盘图标。调用方负责 Dispose 返回的 Icon（替换前先释放旧的）。</summary>
         public static Icon DrawIcon(int? percent, bool charging, bool online,
-                                    string style, bool darkTaskbar)
+                                    string style, bool darkTaskbar, int lowThreshold)
         {
             using (Bitmap bitmap = new Bitmap(32, 32))
             {
@@ -83,7 +80,7 @@ namespace GPW2BatteryShow
                     g.SmoothingMode = SmoothingMode.AntiAlias;
                     g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
 
-                    Color accent = PickColor(percent, charging, online);
+                    Color accent = PickColor(percent, charging, online, lowThreshold);
 
                     if (!online || !percent.HasValue)
                     {
