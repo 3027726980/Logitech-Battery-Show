@@ -667,12 +667,13 @@ namespace GPW2BatteryShow
                     {
                         continue;
                     }
-                    // 严格回显校验：正常应答的 payload[2] 与请求的 request[2]
-                    //（(function<<4)|SwId）完全一致。新开句柄的 HID 队列里常积压
-                    // 枚举期间的杂帧（设备通知/陈旧应答），设备索引和 SwId 低 4 位
-                    // 恰好能通过上面的检查，但 func 回显不会匹配，据此过滤。
-                    // 真机教训：插线瞬间的杂帧被误当 func1 应答，解析出 60% 假电量。
-                    if (payload[2] != request[2])
+                    // 严格回显校验：正常应答的 payload[2] 与请求帧的 request[3]
+                    //（(function<<4)|SwId；request[0]=ReportId、[1]=设备索引、[2]=featureIndex）
+                    // 完全一致。新开句柄的 HID 队列里常积压枚举期间的杂帧（设备通知/
+                    // 陈旧应答），设备索引和 SwId 低 4 位恰好能通过上面的检查，但 func
+                    // 回显不会匹配，据此过滤。真机教训：插线瞬间的杂帧被误当 func1
+                    // 应答，解析出 60% 假电量。
+                    if (payload[2] != request[3])
                     {
                         staleSkipped++;
                         if (staleSkipped <= 2)
