@@ -90,6 +90,11 @@ namespace GPW2BatteryShow
                     {
                         DrawText(g, "?", 24, OfflineColor);
                     }
+                    else if (style == "combo")
+                    {
+                        // 电池+数字组合：轮廓占满画布，数字嵌入电池内部
+                        DrawComboBattery(g, foreground, accent, percent.Value);
+                    }
                     else if (style == "simple")
                     {
                         DrawBatteryShell(g, foreground);
@@ -142,6 +147,36 @@ namespace GPW2BatteryShow
             using (Brush brush = new SolidBrush(foreground))
             {
                 g.FillRectangle(brush, 27, 14, 3, 7);
+            }
+        }
+
+        /// <summary>
+        /// 电池+数字组合（combo）：电池轮廓占满画布（1,6)-(28,28)，
+        /// 数字嵌入电池内部。充电时数字青色、轮廓内衬一条充电色底条。
+        /// </summary>
+        private static void DrawComboBattery(Graphics g, Color foreground, Color accent, int percent)
+        {
+            using (Pen pen = new Pen(foreground, 2f))
+            {
+                g.DrawPath(pen, RoundedRect(1, 6, 27, 22, 4));
+            }
+            using (Brush brush = new SolidBrush(foreground))
+            {
+                g.FillRectangle(brush, 29, 12, 3, 10);   // 正极凸起
+            }
+
+            string text = percent.ToString();
+            // 三位数缩字号，避免溢出电池内框
+            int fontSize = text.Length >= 3 ? 11 : 15;
+            using (Font font = new Font("Segoe UI", fontSize, FontStyle.Bold, GraphicsUnit.Pixel))
+            {
+                SizeF size = g.MeasureString(text, font);
+                float x = (1 + 28) / 2f - size.Width / 2f;
+                float y = (6 + 28) / 2f - size.Height / 2f;
+                using (Brush brush = new SolidBrush(accent))
+                {
+                    g.DrawString(text, font, brush, x, y);
+                }
             }
         }
 

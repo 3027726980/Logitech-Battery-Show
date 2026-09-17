@@ -13,6 +13,7 @@ namespace GPW2BatteryShow
         private readonly NumericUpDown _intervalBox;
         private readonly NumericUpDown _thresholdBox;
         private readonly RadioButton _numericRadio;
+        private readonly RadioButton _comboRadio;
         private readonly RadioButton _simpleRadio;
         private readonly CheckBox _autoStartBox;
 
@@ -36,7 +37,8 @@ namespace GPW2BatteryShow
             _thresholdBox = new NumericUpDown { Location = new Point(230, 56), Size = new Size(110, 26), Minimum = 5, Maximum = 90, Value = settings.LowBatteryThreshold };
 
             var styleLabel = new Label { Text = "托盘图标样式", AutoSize = true, Location = new Point(20, 98) };
-            _numericRadio = new RadioButton { Text = "数值（推荐）", AutoSize = true, Location = new Point(230, 96), Checked = settings.IconStyle == "numeric" };
+            _numericRadio = new RadioButton { Text = "数值", AutoSize = true, Location = new Point(230, 96), Checked = settings.IconStyle == "numeric" };
+            _comboRadio = new RadioButton { Text = "电池+数字", AutoSize = true, Location = new Point(300, 96), Checked = settings.IconStyle == "combo" };
             _simpleRadio = new RadioButton { Text = "简约", AutoSize = true, Location = new Point(230, 122), Checked = settings.IconStyle == "simple" };
 
             _autoStartBox = new CheckBox
@@ -65,7 +67,7 @@ namespace GPW2BatteryShow
             Controls.AddRange(new Control[]
             {
                 intervalLabel, _intervalBox, thresholdLabel, _thresholdBox,
-                styleLabel, _numericRadio, _simpleRadio, _autoStartBox,
+                styleLabel, _numericRadio, _comboRadio, _simpleRadio, _autoStartBox,
                 note, saveButton, cancelButton
             });
 
@@ -77,7 +79,8 @@ namespace GPW2BatteryShow
         {
             _settings.PollIntervalSec = (int)_intervalBox.Value;
             _settings.LowBatteryThreshold = (int)_thresholdBox.Value;
-            _settings.IconStyle = _numericRadio.Checked ? "numeric" : "simple";
+            _settings.IconStyle = _numericRadio.Checked ? "numeric"
+                : _comboRadio.Checked ? "combo" : "simple";
             _settings.Save();
             AppSettings.SetAutoStart(_autoStartBox.Checked);
             if (_onApplied != null)

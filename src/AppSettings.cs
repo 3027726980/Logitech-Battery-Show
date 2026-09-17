@@ -52,7 +52,8 @@ namespace GPW2BatteryShow
                     if (settings.PollIntervalSec < 10) settings.PollIntervalSec = 10;
                     if (settings.LowBatteryThreshold < 5) settings.LowBatteryThreshold = 5;
                     if (settings.LowBatteryThreshold > 90) settings.LowBatteryThreshold = 90;
-                    if (settings.IconStyle != "numeric" && settings.IconStyle != "simple")
+                    if (settings.IconStyle != "numeric" && settings.IconStyle != "combo"
+                        && settings.IconStyle != "simple")
                     {
                         settings.IconStyle = "numeric";
                     }
