@@ -13,9 +13,13 @@ dist/
 # 本地日志与运行时数据
 *.log
 logs/
+log.txt
+log.txt.*
 
 # 本地配置（含机器相关路径，不入库）
 config.local.json
+config.json
+config.json.bak
 
 # IDE
 .idea/
