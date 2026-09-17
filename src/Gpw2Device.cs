@@ -67,41 +67,44 @@ namespace GPW2BatteryShow
                     {
                         return BatteryReading.Offline(null);
                     }
+                    // 单次查询不内部重试：离线时的快速重试节奏由上层 timer 控制，
+                    // 连续失败达到阈值后由上层调用 Reset() 触发全量重探测。
+                    // 这样锁的占空比低，手动刷新等并发查询不会被长时间阻塞。
                     byte[] request = LogitechHidpp.BuildBatteryRequest(_deviceIndex, _featureIndex);
-                    for (int attempt = 0; attempt < 2; attempt++)
+                    byte[] resp = QueryOn(_streams, request, 500);
+                    int percent; bool charging; bool externalPower;
+                    if (TryParseAnswer(resp, out percent, out charging, out externalPower))
                     {
-                        byte[] resp = QueryOn(_streams, request, 500);
-                        int percent; bool charging; bool externalPower;
-                        if (TryParseAnswer(resp, out percent, out charging, out externalPower))
+                        _lastPercent = percent;
+                        return new BatteryReading
                         {
-                            _lastPercent = percent;
-                            return new BatteryReading
-                            {
-                                Percent = percent,
-                                Charging = charging,
-                                Online = true,
-                                Source = _deviceIndex == DirectIndex ? "有线直连" : "接收器"
-                            };
-                        }
-                        if (attempt < 1)
-                        {
-                            Thread.Sleep(150);
-                        }
+                            Percent = percent,
+                            Charging = charging,
+                            Online = true,
+                            Source = _deviceIndex == DirectIndex ? "有线直连" : "接收器"
+                        };
                     }
-                    // 休眠/形态变化/持续超时：丢弃句柄，下次重新探测；保留已知电量
-                    CloseStreams();
-                    return BatteryReading.Offline(_lastPercent);
+                    return BatteryReading.Offline(_lastPercent);   // 保留句柄，快速失败
                 }
                 catch (Exception ex)
                 {
                     Logger.Write("hidapi IO 异常: " + ex.Message);
-                    CloseStreams();
+                    CloseStreams();   // 句柄失效（设备拔出等）才丢弃，下次重新探测
                     return BatteryReading.Offline(_lastPercent);
                 }
             }
         }
 
         // ---- 内部实现 ----
+
+        /// <summary>丢弃当前绑定的句柄（保留已知电量），下次查询将全量重新探测。</summary>
+        public void RequestReprobe()
+        {
+            lock (_sync)
+            {
+                CloseStreams();
+            }
+        }
 
         private void CloseStreams()
         {

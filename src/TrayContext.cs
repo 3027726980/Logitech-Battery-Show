@@ -40,7 +40,7 @@ namespace GPW2BatteryShow
             };
 
             var menu = new ContextMenuStrip();
-            menu.Items.Add("立即刷新", null, delegate { BeginRefresh(); });
+            menu.Items.Add("立即刷新", null, delegate { ManualRefresh(); });
             menu.Items.Add(new ToolStripSeparator());
             var numericItem = new ToolStripMenuItem("数值")
             {
@@ -112,6 +112,15 @@ namespace GPW2BatteryShow
         private BatteryReading LastReading { get; set; }
 
         /// <summary>后台查询 → 回 UI 线程更新（查询去重）。</summary>
+        /// <summary>手动刷新：强制全量重探测（丢弃旧句柄）+ 即时反馈，语义上区别于定时轮询。</summary>
+        private void ManualRefresh()
+        {
+            Logger.Write("手动刷新触发");
+            _device.RequestReprobe();
+            _tray.Text = "正在刷新…";
+            BeginRefresh();
+        }
+
         private void BeginRefresh()
         {
             if (_busy)
