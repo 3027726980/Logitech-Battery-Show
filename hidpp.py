@@ -58,3 +58,51 @@ def extract_payload(data) -> bytes | None:
 def is_error(payload: bytes) -> bool:
     """HID++ 2.0 错误帧特征：payload[1] == 0xFF 且 payload[2] == 0x02。"""
     return len(payload) >= 4 and payload[1] == 0xFF and payload[2] == 0x02
+
+
+# ---- 应答解析 ----
+
+# 锂电 (3.7V 标称) 分段线性曲线: (电压 mV, 百分比)
+_VOLTAGE_CURVE = (
+    (4200, 100), (4050, 90), (3900, 75), (3780, 55), (3680, 35),
+    (3580, 18), (3500, 8), (3350, 1), (3000, 0),
+)
+
+
+def parse_feature_index_response(payload: bytes) -> int:
+    """GetFeature 应答 → 分配的 feature index；0 表示设备不支持该 feature。"""
+    return payload[3]
+
+
+def parse_battery_status(payload: bytes) -> tuple[int, bool] | None:
+    """0x1000 GetBatteryLevelStatus 应答 → (percent 0-100, charging)。
+
+    status: 0=discharging, 1=charging, 2=almost full, 3=full。
+    电量越界视为无效，返回 None。
+    """
+    percent = payload[3]
+    status = payload[5]
+    if percent > 100:
+        return None
+    return percent, status in (0x01, 0x02)
+
+
+def parse_adc_measurement(payload: bytes) -> tuple[int, bool] | None:
+    """0x1004 ADC 应答 → 电压 mV（payload[3..4] 小端）按锂电曲线换算。
+
+    电压超出 [3000, 4500] 视为无效。0x1004 不含充电状态，固定 False。
+    """
+    mv = payload[3] | (payload[4] << 8)
+    if not (3000 <= mv <= 4500):
+        return None
+    return voltage_to_percent(mv), False
+
+
+def voltage_to_percent(mv: int) -> int:
+    """按分段线性锂电曲线把电压 mV 换算为百分比 0-100。"""
+    if mv >= _VOLTAGE_CURVE[0][0]:
+        return 100
+    for (v1, p1), (v2, p2) in zip(_VOLTAGE_CURVE, _VOLTAGE_CURVE[1:]):
+        if mv >= v2:
+            return round(p1 + (p2 - p1) * (mv - v1) / (v2 - v1))
+    return 0
