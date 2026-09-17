@@ -11,7 +11,7 @@ namespace GPW2BatteryShow
     {
         public int PollIntervalSec = 60;          // 轮询间隔（过小会干扰鼠标省电休眠）
         public int LowBatteryThreshold = 20;      // 低电量通知阈值（%）
-        public string IconStyle = "numeric";      // numeric | combo | simple
+        public string IconStyle = "numeric";      // numeric | simple
         public bool PopupOnClick = true;          // 左键单击是否展开电量卡片
 
         private static string ConfigDirectory
@@ -57,10 +57,9 @@ namespace GPW2BatteryShow
                     if (settings.PollIntervalSec < 10) settings.PollIntervalSec = 10;
                     if (settings.LowBatteryThreshold < 5) settings.LowBatteryThreshold = 5;
                     if (settings.LowBatteryThreshold > 90) settings.LowBatteryThreshold = 90;
-                    if (settings.IconStyle != "numeric" && settings.IconStyle != "combo"
-                        && settings.IconStyle != "simple")
+                    if (settings.IconStyle != "numeric" && settings.IconStyle != "simple")
                     {
-                        settings.IconStyle = "numeric";
+                        settings.IconStyle = "numeric";   // combo 样式已移除，存量配置回退
                     }
                     return settings;
                 }

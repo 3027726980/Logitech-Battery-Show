@@ -83,29 +83,20 @@ namespace GPW2BatteryShow
                     g.SmoothingMode = SmoothingMode.AntiAlias;
                     g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
 
-                    Color foreground = darkTaskbar ? LightForeground : DarkForeground;
                     Color accent = PickColor(percent, charging, online);
 
                     if (!online || !percent.HasValue)
                     {
                         DrawText(g, "?", 24, OfflineColor);
                     }
-                    else if (style == "combo")
-                    {
-                        // 电池+数字组合：轮廓占满画布，数字嵌入电池内部
-                        DrawComboBattery(g, foreground, accent, percent.Value);
-                    }
                     else if (style == "simple")
                     {
-                        DrawBatteryShell(g, foreground);
-                        if (charging)
-                        {
-                            DrawBolt(g, accent);
-                        }
-                        int innerWidth = (int)Math.Round(19.0 * Math.Min(percent.Value, 100) / 100.0);
+                        // 白色边框 + 放大版电池（1,7)-(28,25)，充电时填充变青色
+                        DrawBatteryShell(g);
+                        int innerWidth = (int)Math.Round(22.0 * Math.Min(percent.Value, 100) / 100.0);
                         using (Brush fill = new SolidBrush(accent))
                         {
-                            g.FillRectangle(fill, 6, 13, innerWidth, 9);
+                            g.FillRectangle(fill, 4, 10, innerWidth, 12);
                         }
                     }
                     else // numeric：大号数字占满画布
@@ -137,54 +128,16 @@ namespace GPW2BatteryShow
             }
         }
 
-        /// <summary>电池轮廓：主体 (3,10)-(26,24) + 右端正极凸起（简约模式用）。</summary>
-        private static void DrawBatteryShell(Graphics g, Color foreground)
+        /// <summary>电池轮廓：白色边框放大版，主体 (1,7)-(28,25) + 右端正极凸起。</summary>
+        private static void DrawBatteryShell(Graphics g)
         {
-            using (Pen pen = new Pen(foreground, 2f))
+            using (Pen pen = new Pen(Color.White, 2f))
             {
-                g.DrawPath(pen, RoundedRect(3, 10, 23, 14, 3));
+                g.DrawPath(pen, RoundedRect(1, 7, 27, 18, 3));
             }
-            using (Brush brush = new SolidBrush(foreground))
+            using (Brush brush = new SolidBrush(Color.White))
             {
-                g.FillRectangle(brush, 27, 14, 3, 7);
-            }
-        }
-
-        /// <summary>
-        /// 综合（combo）：左侧小电池（轮廓+电量填充），右侧数字在电池外面，
-        /// 数字用前景色（白/黑自适应）保证清晰。
-        /// </summary>
-        private static void DrawComboBattery(Graphics g, Color foreground, Color accent, int percent)
-        {
-            // 左侧小电池：主体 (1,11)-(13,23)，正极凸起 (13,14)-(15,20)
-            using (Pen pen = new Pen(foreground, 2f))
-            {
-                g.DrawPath(pen, RoundedRect(1, 11, 12, 12, 2));
-            }
-            using (Brush brush = new SolidBrush(foreground))
-            {
-                g.FillRectangle(brush, 13, 14, 2, 6);
-            }
-            // 内部电量填充（横向，随电量伸缩）
-            int barMaxWidth = 8;
-            int barWidth = (int)Math.Round(barMaxWidth * Math.Min(percent, 100) / 100.0);
-            using (Brush brush = new SolidBrush(accent))
-            {
-                g.FillRectangle(brush, 3, 13, barWidth, 8);
-            }
-
-            // 右侧数字（电池外，前景色保证清晰）
-            string text = percent.ToString();
-            int fontSize = text.Length >= 3 ? 12 : 16;
-            using (Font font = new Font("Segoe UI", fontSize, FontStyle.Bold, GraphicsUnit.Pixel))
-            {
-                SizeF size = g.MeasureString(text, font);
-                float x = 16f + (16f - size.Width) / 2f;
-                float y = (32f - size.Height) / 2f;
-                using (Brush brush = new SolidBrush(foreground))
-                {
-                    g.DrawString(text, font, brush, x, y);
-                }
+                g.FillRectangle(brush, 28, 12, 3, 8);
             }
         }
 
@@ -198,20 +151,6 @@ namespace GPW2BatteryShow
             path.AddArc(x, y + h - d, d, d, 90, 90);
             path.CloseFigure();
             return path;
-        }
-
-        /// <summary>充电闪电（简约模式画在电池上方）。</summary>
-        private static void DrawBolt(Graphics g, Color color)
-        {
-            using (Brush brush = new SolidBrush(color))
-            {
-                var points = new[]
-                {
-                    new Point(15, 1), new Point(10, 9), new Point(14, 9),
-                    new Point(12, 15), new Point(19, 7), new Point(15, 7), new Point(17, 1)
-                };
-                g.FillPolygon(brush, points);
-            }
         }
     }
 }

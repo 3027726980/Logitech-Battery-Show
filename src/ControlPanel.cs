@@ -14,7 +14,6 @@ namespace GPW2BatteryShow
         private readonly NumericUpDown _thresholdBox;
         private readonly RadioButton _numericRadio;
         private readonly RadioButton _simpleRadio;
-        private readonly RadioButton _comboRadio;
         private readonly CheckBox _autoStartBox;
         private readonly CheckBox _popupOnClickBox;
 
@@ -43,7 +42,6 @@ namespace GPW2BatteryShow
             var styleLabel = new Label { Text = "托盘图标样式", AutoSize = true, Location = new Point(labelX, 108) };
             _numericRadio = new RadioButton { Text = "数值", AutoSize = true, Location = new Point(inputX, 106), Checked = settings.IconStyle == "numeric" };
             _simpleRadio = new RadioButton { Text = "默认", AutoSize = true, Location = new Point(inputX + 62, 106), Checked = settings.IconStyle == "simple" };
-            _comboRadio = new RadioButton { Text = "综合", AutoSize = true, Location = new Point(inputX + 124, 106), Checked = settings.IconStyle == "combo" };
 
             _popupOnClickBox = new CheckBox
             {
@@ -79,7 +77,7 @@ namespace GPW2BatteryShow
             Controls.AddRange(new Control[]
             {
                 intervalLabel, _intervalBox, thresholdLabel, _thresholdBox,
-                styleLabel, _numericRadio, _simpleRadio, _comboRadio,
+                styleLabel, _numericRadio, _simpleRadio,
                 _popupOnClickBox, _autoStartBox,
                 note, saveButton, cancelButton
             });
@@ -92,8 +90,7 @@ namespace GPW2BatteryShow
         {
             _settings.PollIntervalSec = (int)_intervalBox.Value;
             _settings.LowBatteryThreshold = (int)_thresholdBox.Value;
-            _settings.IconStyle = _numericRadio.Checked ? "numeric"
-                : _comboRadio.Checked ? "combo" : "simple";
+            _settings.IconStyle = _numericRadio.Checked ? "numeric" : "simple";
             AppSettings.SetAutoStart(_autoStartBox.Checked);
             _settings.PopupOnClick = _popupOnClickBox.Checked;
             _settings.Save();

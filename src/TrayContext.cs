@@ -39,25 +39,11 @@ namespace GPW2BatteryShow
             {
                 Checked = _settings.IconStyle == "simple"
             };
-            var comboItem = new ToolStripMenuItem("综合")
-            {
-                Checked = _settings.IconStyle == "combo"
-            };
             numericItem.Click += delegate
             {
                 _settings.IconStyle = "numeric";
                 _settings.Save();
                 numericItem.Checked = true;
-                comboItem.Checked = false;
-                simpleItem.Checked = false;
-                RedrawIcon(LastReading);
-            };
-            comboItem.Click += delegate
-            {
-                _settings.IconStyle = "combo";
-                _settings.Save();
-                comboItem.Checked = true;
-                numericItem.Checked = false;
                 simpleItem.Checked = false;
                 RedrawIcon(LastReading);
             };
@@ -67,12 +53,10 @@ namespace GPW2BatteryShow
                 _settings.Save();
                 simpleItem.Checked = true;
                 numericItem.Checked = false;
-                comboItem.Checked = false;
                 RedrawIcon(LastReading);
             };
             menu.Items.Add(numericItem);
             menu.Items.Add(simpleItem);
-            menu.Items.Add(comboItem);
             menu.Items.Add(new ToolStripSeparator());
             var autoStartItem = new ToolStripMenuItem("开机自启")
             {
