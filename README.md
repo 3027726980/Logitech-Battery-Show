@@ -81,6 +81,10 @@ lib/HidSharp.dll          # HidSharp 2.x（Apache 2.0）
 如遇识别异常，运行 `dist/LogiDiag.exe`（源码 `tools/LogiDiag.cs`），把输出发给开发者即可；
 应用日志位于 `%LOCALAPPDATA%\GPW2BatteryShow\log.txt`。
 
+## 许可证
+
+本项目代码以 [MIT License](LICENSE) 发布。第三方库 HidSharp 遵循其自身的 Apache 2.0 许可证（见 `lib/` 内的许可文件）。
+
 ## 致谢
 
 - [HidSharp](https://github.com/SeekHisKingdom/HIDSharp)（Apache 2.0）— 跨平台 .NET HID 库

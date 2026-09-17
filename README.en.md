@@ -97,6 +97,11 @@ If detection misbehaves, run `dist/LogiDiag.exe` (source in `tools/LogiDiag.cs`)
 share the output; the application log lives at
 `%LOCALAPPDATA%\GPW2BatteryShow\log.txt`.
 
+## License
+
+This project's code is released under the [MIT License](LICENSE). The third-party
+library HidSharp remains under its own Apache 2.0 license (see the license files in `lib/`).
+
 ## Credits
 
 - [HidSharp](https://github.com/SeekHisKingdom/HIDSharp) (Apache 2.0) — cross-platform .NET HID library
