@@ -51,6 +51,9 @@ namespace GPW2BatteryShow
         private byte _featureIndex;
         private ushort _featureId;
         private int? _lastPercent;
+        private BatteryReading _probeReading;     // 探测时顺带读到的电量（复用，省一次查询）
+        private readonly Dictionary<string, byte> _featureIndexCache =
+            new Dictionary<string, byte>();       // 组 key → feature index（重探测免查 GetFeature）
 
         /// <summary>顶层入口：按需发现设备并读取电量。失败返回 Online=false。</summary>
         public BatteryReading ReadBattery()
@@ -64,6 +67,16 @@ namespace GPW2BatteryShow
                     {
                         Logger.Write("ReadBattery: 无绑定句柄，开始全量重探测");
                         OpenAndDetect();
+                        if (_probeReading != null)
+                        {
+                            // 探测阶段已顺带读到电量，复用省一次 ~805ms 设备应答延迟
+                            BatteryReading r = _probeReading;
+                            _probeReading = null;
+                            Logger.Write(string.Format(
+                                "ReadBattery: 复用探测读数 {0}%（探测查询一次到位）", r.Percent));
+                            _lastPercent = r.Percent;
+                            return r;
+                        }
                     }
                     if (_streams == null)
                     {
@@ -71,6 +84,7 @@ namespace GPW2BatteryShow
                             "ReadBattery: 重探测后仍无设备，耗时 {0}ms", sw.ElapsedMilliseconds));
                         return BatteryReading.Offline(null);
                     }
+                    _probeReading = null;
                     Logger.Write(string.Format("ReadBattery: 查询 devIdx={0} featureIdx={1}",
                         _deviceIndex, _featureIndex));
                     // 单次查询不内部重试：离线时的快速重试节奏由上层 timer 控制，
@@ -176,27 +190,40 @@ namespace GPW2BatteryShow
 
                 // 直连优先：有线鼠标（GPW2 充电线插电脑）会对 0xFF 和全部 slot 都应答，
                 // 必须先判定直连，否则会被误绑到 slot 1-6
-                ProbeResult direct = ProbeOn(streams, DirectIndex);
+                byte cached = _featureIndexCache.ContainsKey(groupEntry.Key)
+                    ? _featureIndexCache[groupEntry.Key] : (byte)0;
+                ProbeResult direct = ProbeOn(streams, DirectIndex, groupEntry.Key, cached);
                 if (direct != null)
                 {
                     _streams = streams;
                     _deviceIndex = DirectIndex;
                     _featureIndex = direct.FeatureIndex;
                     _featureId = direct.FeatureId;
-                    Logger.Write(string.Format("直连模式: feature=0x{0:X4}", direct.FeatureId));
+                    _probeReading = new BatteryReading
+                    {
+                        Percent = direct.Percent, Charging = direct.Charging,
+                        Online = true, Source = "有线直连"
+                    };
+                    Logger.Write(string.Format("直连模式: feature=0x{0:X4} 电量={1}%",
+                        direct.FeatureId, direct.Percent));
                     return;
                 }
                 foreach (int slot in ReceiverSlots)
                 {
-                    ProbeResult probed = ProbeOn(streams, (byte)slot);
+                    ProbeResult probed = ProbeOn(streams, (byte)slot, groupEntry.Key, cached);
                     if (probed != null)
                     {
                         _streams = streams;
                         _deviceIndex = (byte)slot;
                         _featureIndex = probed.FeatureIndex;
                         _featureId = probed.FeatureId;
-                        Logger.Write(string.Format("接收器模式: slot={0} feature=0x{1:X4}",
-                            slot, probed.FeatureId));
+                        _probeReading = new BatteryReading
+                        {
+                            Percent = probed.Percent, Charging = probed.Charging,
+                            Online = true, Source = "接收器"
+                        };
+                        Logger.Write(string.Format("接收器模式: slot={0} feature=0x{1:X4} 电量={2}%",
+                            slot, probed.FeatureId, probed.Percent));
                         return;
                     }
                 }
@@ -237,6 +264,7 @@ namespace GPW2BatteryShow
         private static bool TryOpen(HidDevice device, out OpenedStream opened)
         {
             opened = default(OpenedStream);
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             try
             {
                 var configuration = new OpenConfiguration();
@@ -247,10 +275,14 @@ namespace GPW2BatteryShow
                 stream.WriteTimeout = 800;
                 opened.Stream = stream;
                 opened.MaxInputLength = Math.Max(device.GetMaxInputReportLength(), 32);
+                Logger.Write(string.Format("  open 耗时 {0}ms: {1}",
+                    sw.ElapsedMilliseconds, ShortPath(device.DevicePath)));
                 return true;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Logger.Write(string.Format("  open 失败({0}ms): {1}",
+                    sw.ElapsedMilliseconds, ex.Message));
                 return false;
             }
         }
@@ -259,18 +291,40 @@ namespace GPW2BatteryShow
         {
             public byte FeatureIndex;
             public ushort FeatureId;
+            public int Percent;          // 探测时顺带读到的 func1 数据（省一次 805ms 查询）
+            public bool Charging;
+            public bool ExternalPower;
         }
 
         /// <summary>探测指定 index 上是否有带电量功能的设备，null 表示离线/无电量功能。</summary>
-        private ProbeResult ProbeOn(List<OpenedStream> streams, byte index)
+        private ProbeResult ProbeOn(List<OpenedStream> streams, byte index, string groupKey, byte cachedFeatureIndex)
         {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             byte[] pingResp = QueryOn(streams, LogitechHidpp.BuildPing(index), 300);
             if (pingResp == null || LogitechHidpp.IsHidpp1Error(pingResp))
             {
-                Logger.Write(string.Format("  probe 0x{0:X2}: 离线（无应答或1.0错误帧）", index));
+                Logger.Write(string.Format("  probe 0x{0:X2}: 离线（无应答或1.0错误帧，耗时 {1}ms）", index, sw.ElapsedMilliseconds));
                 return null;   // 无应答或 0x8F 错误帧（空 slot 真机行为）
             }
-            Logger.Write(string.Format("  probe 0x{0:X2}: 在线", index));
+            Logger.Write(string.Format("  probe 0x{0:X2}: 在线（耗时 {1}ms）", index, sw.ElapsedMilliseconds));
+
+            // feature index 缓存命中则跳过 GetFeature（省一次 ~805ms 设备应答延迟）
+            int percent; bool charging; bool externalPower;
+            if (cachedFeatureIndex != 0)
+            {
+                byte[] resp = QueryOn(streams, LogitechHidpp.BuildBatteryRequest(index, cachedFeatureIndex), 300);
+                if (resp != null && !LogitechHidpp.IsError(resp)
+                    && TryParseAnswer(resp, out percent, out charging, out externalPower))
+                {
+                    return new ProbeResult
+                    {
+                        FeatureIndex = cachedFeatureIndex,
+                        FeatureId = LogitechHidpp.UnifiedBatteryId,
+                        Percent = percent, Charging = charging, ExternalPower = externalPower
+                    };
+                }
+            }
+
             foreach (ushort featureId in LogitechHidpp.BatteryFeatureIds)
             {
                 byte[] resp = QueryOn(streams, LogitechHidpp.BuildGetFeature(index, featureId), 300);
@@ -284,12 +338,17 @@ namespace GPW2BatteryShow
                     continue;
                 }
                 resp = QueryOn(streams, LogitechHidpp.BuildBatteryRequest(index, (byte)featureIndex), 300);
-                int percent; bool charging; bool externalPower;
                 // 必须验证 func1 应答可解析出有效 SOC，防止误绑到无电量 feature
                 if (resp != null && !LogitechHidpp.IsError(resp)
                     && TryParseAnswer(resp, out percent, out charging, out externalPower))
                 {
-                    return new ProbeResult { FeatureIndex = (byte)featureIndex, FeatureId = featureId };
+                    _featureIndexCache[groupKey] = (byte)featureIndex;   // 缓存，重探测免查
+                    return new ProbeResult
+                    {
+                        FeatureIndex = (byte)featureIndex,
+                        FeatureId = featureId,
+                        Percent = percent, Charging = charging, ExternalPower = externalPower
+                    };
                 }
             }
             return null;
@@ -304,6 +363,7 @@ namespace GPW2BatteryShow
         private static byte[] QueryOn(List<OpenedStream> streams, byte[] request, int timeoutMs)
         {
             bool written = false;
+            var qsw = System.Diagnostics.Stopwatch.StartNew();
             foreach (OpenedStream s in streams)
             {
                 try
@@ -318,7 +378,13 @@ namespace GPW2BatteryShow
             {
                 return null;
             }
-            for (int round = 0; round < 3; round++)
+            long writeMs = qsw.ElapsedMilliseconds;
+            // 小步快轮询：每句柄单次 read 最多阻塞 120ms（ReadTimeout），
+            // 总时长受 deadline 约束。应答无论先出现在哪个 collection、何时到达，
+            // 都能在 120ms 内被捕获（长帧在 Col02、短帧在 Col01 的真机行为下
+            // 不再因读取顺序而白等半轮）。
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            while (sw.ElapsedMilliseconds < timeoutMs)
             {
                 foreach (OpenedStream s in streams)
                 {
@@ -355,9 +421,14 @@ namespace GPW2BatteryShow
                     {
                         continue;
                     }
+                    Logger.Write(string.Format(
+                        "  QueryOn: write={0}ms, 应答在 {1}ms 到达（长帧={2}）",
+                        writeMs, qsw.ElapsedMilliseconds, buffer[0] == 0x11));
                     return payload;
                 }
             }
+            Logger.Write(string.Format("  QueryOn: 超时 {0}ms 无应答（write={1}ms）",
+                timeoutMs, writeMs));
             return null;
         }
 
