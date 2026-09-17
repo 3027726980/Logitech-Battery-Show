@@ -345,6 +345,12 @@ namespace GPW2BatteryShow
                     {
                         continue;
                     }
+                    // 错误帧立即返回：0x8F/0xFF 是"否定应答"（如接收器对 0xFF 的拒绝），
+                    // 快速交给上层判定离线，避免空转等满超时（真机实测探测慢的主因）
+                    if (payload[1] == 0x8F || (payload[1] == 0xFF && payload[2] == 0x02))
+                    {
+                        return payload;
+                    }
                     if ((payload[2] & 0x0F) != LogitechHidpp.SwId)   // 软件标识不匹配
                     {
                         continue;
