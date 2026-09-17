@@ -1,0 +1,156 @@
+"""设备发现与电量查询（hidapi 交互层）。hidapi 可注入以便测试。
+
+发现策略（不硬编码 PID，天然兼容其他有电量功能的罗技无线设备）：
+1. 枚举 VID=0x046D 且 usage page 为罗技厂商页（0xFF00 / 0xFF43）的接口
+2. 先探测直连形态（device index 0xFF）
+3. 若任一 slot(1-6) 上探测到设备 → 判定为接收器，采用该 slot
+4. 未能打开的接口（被 G HUB 等占用）直接跳过
+"""
+import logging
+from dataclasses import dataclass
+
+import hid
+
+from hidpp import (
+    BATTERY_FEATURE_IDS, BATTERY_STATUS_ID,
+    build_battery_request, build_get_feature, build_ping,
+    extract_payload, is_error, parse_battery_status,
+    parse_adc_measurement, parse_feature_index_response, SW_ID,
+)
+
+log = logging.getLogger("GPW2BatteryShow")
+
+LOGI_VENDOR_ID = 0x046D
+DIRECT_INDEX = 0xFF
+RECEIVER_SLOTS = tuple(range(1, 7))      # 接收器配对 slot 1-6，离线的静默失败
+USAGE_PAGES = (0xFF00, 0xFF43)
+
+
+@dataclass
+class BatteryState:
+    percent: int | None = None   # 最后一次成功读取的电量（None=从未读到）
+    charging: bool = False
+    online: bool = False
+
+
+class DeviceManager:
+    def __init__(self, hidapi=None):
+        self._hid = hidapi if hidapi is not None else hid
+        self._dev = None
+        self._device_index = None
+        self._feature_index = None
+        self._feature_id = None
+        self._last_percent = None
+
+    def read_battery(self) -> BatteryState:
+        """顶层入口：按需发现设备并读取电量。失败返回 online=False。"""
+        try:
+            if self._dev is None:
+                self._open_and_detect()
+            if self._dev is None:
+                return BatteryState(None, False, False)
+            resp = self._query(build_battery_request(self._device_index,
+                                                     self._feature_index))
+            state = self._parse(resp)
+            if state is None:
+                # 休眠/形态变化：丢弃句柄，下次重新探测；保留已知电量
+                self._close()
+                return BatteryState(self._last_percent, False, False)
+            self._last_percent = state.percent
+            return state
+        except OSError:
+            log.exception("hidapi IO 异常")
+            self._close()
+            return BatteryState(self._last_percent, False, False)
+
+    # ---- 内部实现 ----
+
+    def _close(self):
+        if self._dev is not None:
+            try:
+                self._dev.close()
+            except OSError:
+                pass
+        self._dev = self._device_index = self._feature_index = None
+        self._feature_id = None
+
+    def _open_and_detect(self):
+        for info in self._hid.enumerate(vendor_id=LOGI_VENDOR_ID):
+            if info.get("usage_page") not in USAGE_PAGES:
+                continue
+            try:
+                dev = self._hid.device()
+                dev.open_path(info["path"])
+            except (OSError, ValueError):
+                log.info("接口被占用，跳过: %s", info.get("path"))
+                continue
+            direct = self._probe_on(dev, DIRECT_INDEX)
+            for slot in RECEIVER_SLOTS:
+                probed = self._probe_on(dev, slot)
+                if probed is not None:
+                    self._bind(dev, slot, probed)
+                    log.info("接收器模式: slot=%d feature=%s", slot, probed)
+                    return
+            if direct is not None:
+                self._bind(dev, DIRECT_INDEX, direct)
+                log.info("直连模式: feature=%s", direct)
+                return
+            dev.close()
+
+    def _bind(self, dev, device_index, probed):
+        self._dev = dev
+        self._device_index = device_index
+        self._feature_index, self._feature_id = probed
+
+    def _probe_on(self, dev, index):
+        """探测指定 index 上是否有带电量功能的设备 → (feature_index, feature_id) | None"""
+        if self._query_on(dev, build_ping(index)) is None:
+            return None
+        for fid in BATTERY_FEATURE_IDS:
+            resp = self._query_on(dev, build_get_feature(index, fid))
+            if resp is None or is_error(resp):
+                continue
+            fidx = parse_feature_index_response(resp)
+            if not fidx:
+                continue
+            resp = self._query_on(dev, build_battery_request(index, fidx))
+            if resp is not None and not is_error(resp):
+                return fidx, fid
+        return None
+
+    def _query(self, request):
+        return self._query_on(self._dev, request)
+
+    def _query_on(self, dev, request, timeout_ms=800):
+        """发送请求并收取匹配的应答 payload；超时/不匹配返回 None。"""
+        try:
+            dev.write(request)
+        except (OSError, ValueError):
+            return None
+        for _ in range(3):
+            try:
+                data = dev.read(32, timeout_ms=timeout_ms // 3)
+            except (OSError, ValueError):
+                return None
+            if not data:
+                continue
+            payload = extract_payload(data)
+            if payload is None or len(payload) < 4:
+                continue
+            if payload[0] != request[1]:          # 设备索引不匹配
+                continue
+            if (payload[2] & 0x0F) != SW_ID:      # 软件标识不匹配
+                continue
+            return payload
+        return None
+
+    def _parse(self, resp):
+        if resp is None or is_error(resp):
+            return None
+        parsed = (parse_battery_status(resp)
+                  if self._feature_id == BATTERY_STATUS_ID
+                  else parse_adc_measurement(resp))
+        if parsed is None:
+            return None
+        percent, charging = parsed
+        return BatteryState(percent, charging, True)
