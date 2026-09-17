@@ -9,12 +9,12 @@ namespace GPW2BatteryShow
     {
         private static readonly object Sync = new object();
 
+        /// <summary>日志目录：跟随 exe 所在目录（不写入 C 盘用户目录，便携式风格）。</summary>
         public static string LogDirectory
         {
             get
             {
-                string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-                return Path.Combine(local, "GPW2BatteryShow");
+                return AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\', '/');
             }
         }
 
