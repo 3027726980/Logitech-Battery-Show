@@ -1,0 +1,220 @@
+using System;
+using System.Drawing;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+
+namespace GPW2BatteryShow
+{
+    /// <summary>
+    /// 托盘应用上下文：常驻图标、定时轮询（后台线程）、左键弹窗、右键菜单、低电量通知。
+    /// HID 查询全部在后台线程执行，绝不阻塞托盘 UI（真机教训：同步查询会卡死托盘）。
+    /// </summary>
+    internal sealed class TrayContext : ApplicationContext
+    {
+        private readonly NotifyIcon _tray;
+        private readonly Timer _timer;                 // WinForms Timer（UI 线程调度）
+        private readonly Gpw2Device _device = new Gpw2Device();
+        private readonly AppSettings _settings;
+
+        private BatteryPopup _popup;
+        private ControlPanel _panel;
+        private Icon _currentIcon;
+        private bool _busy;                            // 后台查询去重
+        private bool _notified;                        // 低电量通知防骚扰
+        private int? _lastOkPercent;
+        private int _failStreak;
+
+        public TrayContext(AppSettings settings)
+        {
+            _settings = settings;
+
+            var menu = new ContextMenuStrip();
+            menu.Items.Add("立即刷新", null, delegate { BeginRefresh(); });
+            menu.Items.Add(new ToolStripSeparator());
+            var numericItem = new ToolStripMenuItem("数值图标")
+            {
+                Checked = _settings.IconStyle == "numeric"
+            };
+            var simpleItem = new ToolStripMenuItem("简约图标")
+            {
+                Checked = _settings.IconStyle == "simple"
+            };
+            numericItem.Click += delegate
+            {
+                _settings.IconStyle = "numeric";
+                _settings.Save();
+                numericItem.Checked = true;
+                simpleItem.Checked = false;
+                RedrawIcon(LastReading);
+            };
+            simpleItem.Click += delegate
+            {
+                _settings.IconStyle = "simple";
+                _settings.Save();
+                simpleItem.Checked = true;
+                numericItem.Checked = false;
+                RedrawIcon(LastReading);
+            };
+            menu.Items.Add(numericItem);
+            menu.Items.Add(simpleItem);
+            menu.Items.Add(new ToolStripSeparator());
+            var autoStartItem = new ToolStripMenuItem("开机自启")
+            {
+                Checked = AppSettings.GetAutoStart()
+            };
+            autoStartItem.Click += delegate
+            {
+                bool enable = !AppSettings.GetAutoStart();
+                AppSettings.SetAutoStart(enable);
+                autoStartItem.Checked = enable;
+            };
+            menu.Items.Add(autoStartItem);
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add("控制面板", null, delegate { ShowControlPanel(); });
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add("退出", null, delegate
+            {
+                _tray.Visible = false;
+                Application.Exit();
+            });
+
+            _tray = new NotifyIcon
+            {
+                Icon = _currentIcon = TrayIconRenderer.DrawIcon(null, false, false, _settings.IconStyle, TrayIconRenderer.IsDarkTaskbar()),
+                Text = "GPW2 电量显示",
+                ContextMenuStrip = menu,
+                Visible = true
+            };
+            _tray.MouseClick += delegate(object sender, MouseEventArgs e)
+            {
+                if (e.Button == MouseButtons.Left)
+                {
+                    ShowPopup();
+                }
+            };
+
+            _timer = new Timer { Interval = 2000 };   // 启动后 2 秒内出首次读数
+            _timer.Tick += delegate { BeginRefresh(); };
+            _timer.Start();
+        }
+
+        private BatteryReading LastReading { get; set; }
+
+        /// <summary>后台查询 → 回 UI 线程更新（查询去重）。</summary>
+        private void BeginRefresh()
+        {
+            if (_busy)
+            {
+                return;
+            }
+            _busy = true;
+            Task.Factory.StartNew(delegate
+            {
+                return _device.ReadBattery();
+            }).ContinueWith(delegate(Task<BatteryReading> task)
+            {
+                _busy = false;
+                BatteryReading reading = task.Status == TaskStatus.RanToCompletion
+                    ? task.Result
+                    : BatteryReading.Offline(null);
+                ApplyReading(reading);
+            }, TaskScheduler.FromCurrentSynchronizationContext());
+        }
+
+        private void ApplyReading(BatteryReading reading)
+        {
+            LastReading = reading;
+
+            // 轮询节奏：在线常规间隔；离线 10s 快速重试 3 轮后回落（防协议压力）
+            _failStreak = reading.Online ? 0 : _failStreak + 1;
+            int seconds = (reading.Online || _failStreak > 3)
+                ? _settings.PollIntervalSec
+                : 10;
+            _timer.Interval = seconds * 1000;
+
+            // 低电量通知：跌破阈值只提醒一次，回升 阈值+5 后重置
+            if (reading.Online && reading.Percent.HasValue)
+            {
+                int percent = reading.Percent.Value;
+                if (!_notified && percent <= _settings.LowBatteryThreshold)
+                {
+                    _tray.ShowBalloonTip(5000, "GPW2 电量提醒",
+                        string.Format("鼠标电量仅剩 {0}%，请及时充电", percent),
+                        ToolTipIcon.Warning);
+                    _notified = true;
+                }
+                if (_notified && percent > _settings.LowBatteryThreshold + 5)
+                {
+                    _notified = false;
+                }
+                _lastOkPercent = percent;
+            }
+
+            RedrawIcon(reading);
+
+            if (_popup != null && !_popup.IsDisposed && _popup.Visible)
+            {
+                _popup.UpdateReading(reading);
+            }
+        }
+
+        private void RedrawIcon(BatteryReading reading)
+        {
+            bool dark = TrayIconRenderer.IsDarkTaskbar();
+            int? percent = reading != null ? reading.Percent : null;
+            bool charging = reading != null && reading.Charging;
+            bool online = reading != null && reading.Online;
+
+            Icon newIcon = TrayIconRenderer.DrawIcon(percent, charging, online,
+                _settings.IconStyle, dark);
+            var old = _currentIcon;
+            _tray.Icon = _currentIcon = newIcon;
+            if (old != null)
+            {
+                old.Dispose();   // 防 GDI 句柄泄漏
+            }
+
+            if (reading == null || !reading.Online)
+            {
+                _tray.Text = (reading != null && reading.Percent.HasValue)
+                    ? string.Format("GPW2 · {0}%（休眠/离线）", reading.Percent.Value)
+                    : "未检测到设备";
+            }
+            else
+            {
+                _tray.Text = string.Format("GPW2 · {0}%{1}",
+                    reading.Percent ?? 0, reading.Charging ? "（充电中）" : "");
+            }
+        }
+
+        private void ShowPopup()
+        {
+            if (_popup == null || _popup.IsDisposed)
+            {
+                _popup = new BatteryPopup(BeginRefresh);
+            }
+            if (LastReading != null)
+            {
+                _popup.UpdateReading(LastReading);
+            }
+            _popup.ShowNearTray();
+            BeginRefresh();   // 打开即刷新
+        }
+
+        private void ShowControlPanel()
+        {
+            if (_panel != null && !_panel.IsDisposed)
+            {
+                _panel.Activate();
+                return;
+            }
+            _panel = new ControlPanel(_settings, delegate
+            {
+                _failStreak = 0;
+                _timer.Interval = 1000;   // 保存后 1 秒内按新配置刷新
+                RedrawIcon(LastReading);
+            });
+            _panel.Show();
+        }
+    }
+}
