@@ -155,11 +155,31 @@ namespace GPW2BatteryShow
         {
             LastReading = reading;
 
-            // 轮询节奏：在线常规间隔；离线 10s 快速重试 3 轮后回落（防协议压力）
+            // 轮询节奏：在线常规间隔；离线 3s 快速重试×3（覆盖鼠标切回无线的物理重连窗口）
+            // → 10s×5 → 回落常规间隔；连续失败 3 轮时重置设备句柄强制全量重探测
+            // （真机日志：不重置则句柄绑在已拔出的旧接口上，永远无法恢复）
             _failStreak = reading.Online ? 0 : _failStreak + 1;
-            int seconds = (reading.Online || _failStreak > 3)
-                ? _settings.PollIntervalSec
-                : 10;
+            if (!reading.Online && _failStreak == 3)
+            {
+                _device.RequestReprobe();
+            }
+            int seconds;
+            if (reading.Online)
+            {
+                seconds = _settings.PollIntervalSec;
+            }
+            else if (_failStreak <= 3)
+            {
+                seconds = 3;
+            }
+            else if (_failStreak <= 8)
+            {
+                seconds = 10;
+            }
+            else
+            {
+                seconds = _settings.PollIntervalSec;
+            }
             _timer.Interval = seconds * 1000;
             Logger.Write(string.Format("ApplyReading: online={0} percent={1} failStreak={2} 下一轮={3}s",
                 reading.Online, reading.Percent.HasValue ? reading.Percent.Value.ToString() : "null",
