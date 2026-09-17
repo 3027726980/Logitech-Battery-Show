@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 打包产物
+build/
+dist/
+*.spec
+
+# 本地日志与运行时数据
+*.log
+logs/
+
+# 本地配置（含机器相关路径，不入库）
+config.local.json
+
+# IDE
+.idea/
+.vscode/
