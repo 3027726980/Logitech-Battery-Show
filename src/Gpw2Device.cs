@@ -372,6 +372,16 @@ namespace GPW2BatteryShow
                     Logger.Write(string.Format(
                         "  组 {0} 存在探测超时（设备可能仍在链路重建中），不进入冷却", groupEntry.Key));
                 }
+                else if (_featureIndexCache.ContainsKey(groupEntry.Key))
+                {
+                    // 曾成功绑定过的主通道组永不冷却：设备关机重开、拔线切回都发生在这里，
+                    // 冷却会让 3s 重试全部空转，恢复被拖延到冷却耗尽（真机日志：关机重开
+                    // 后 8.6s+ 才恢复，且手动刷新清冷却后立刻连上）。
+                    // mi_01/pid_c232 这类从未成功过的组才冷却。
+                    Logger.Write(string.Format(
+                        "  组 {0} 全部探测无绑定，但为曾成功绑定的主通道，不冷却，按节奏继续复检",
+                        groupEntry.Key));
+                }
                 else
                 {
                     _groupCooldown[groupEntry.Key] = GroupCooldownSkips;

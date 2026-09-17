@@ -193,7 +193,12 @@ namespace GPW2BatteryShow
                     _offline = true;
                     _offlineSince = DateTime.Now;
                 }
-                if (_lastOnlineReading != null && DateTime.Now - _offlineSince < OfflineGracePeriod)
+                // 宽限期仅覆盖"有线直连拔线"场景：拔线后鼠标几乎必然切回无线接收器，
+                // 值得等待；接收器模式断联（关机/拿远/接收器拔出）无从判断何时回来，
+                // 直接显示离线（真实优先，控制面板底部可对照真实状态）。
+                if (_lastOnlineReading != null
+                    && _lastOnlineReading.Source == "有线直连"
+                    && DateTime.Now - _offlineSince < OfflineGracePeriod)
                 {
                     // 拔线即视为回到接收器模式：立刻把显示源切为"接收器"（数值保持最后已知，
                     // 充电标志清除——线已拔不可能仍在充电），而不是继续显示"有线直连·充电中"
