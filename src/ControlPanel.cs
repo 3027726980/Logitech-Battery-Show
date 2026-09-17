@@ -16,6 +16,7 @@ namespace GPW2BatteryShow
         private readonly RadioButton _simpleRadio;
         private readonly CheckBox _autoStartBox;
         private readonly CheckBox _popupOnClickBox;
+        private readonly ComboBox _logCombo;
 
         public ControlPanel(AppSettings settings, Action onApplied)
         {
@@ -27,7 +28,7 @@ namespace GPW2BatteryShow
             MaximizeBox = false;
             MinimizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(480, 300);
+            ClientSize = new Size(480, 344);
             Font = new Font("Microsoft YaHei UI", 9.5f);
 
             int labelX = 22;
@@ -59,26 +60,41 @@ namespace GPW2BatteryShow
                 Checked = AppSettings.GetAutoStart()
             };
 
+            var logLabel = new Label { Text = "日志清理策略", AutoSize = true, Location = new Point(labelX, 222) };
+            _logCombo = new ComboBox
+            {
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Location = new Point(inputX, 218),
+                Size = new Size(180, 28)
+            };
+            _logCombo.Items.AddRange(new object[]
+            {
+                "仅保留本次运行", "保留最近 7 天", "保留最近 30 天", "全部保留"
+            });
+            _logCombo.SelectedIndex = settings.LogRetention == "session" ? 0
+                : settings.LogRetention == "30days" ? 2
+                : settings.LogRetention == "all" ? 3 : 1;
+
             var note = new Label
             {
-                Text = "提示：轮询过快会干扰鼠标省电休眠，保持默认 60 秒即可。",
+                Text = "提示：轮询过快会干扰鼠标省电休眠，保持默认 60 秒即可。日志位于程序目录 logs 文件夹。",
                 Font = new Font("Microsoft YaHei UI", 8f),
                 ForeColor = Color.FromArgb(120, 123, 128),
                 AutoSize = true,
-                Location = new Point(labelX, 216)
+                Location = new Point(labelX, 258)
             };
 
-            var saveButton = new Button { Text = "保存", Location = new Point(288, 254), Size = new Size(84, 32) };
+            var saveButton = new Button { Text = "保存", Location = new Point(288, 296), Size = new Size(84, 32) };
             saveButton.Click += delegate { SaveAndClose(); };
 
-            var cancelButton = new Button { Text = "取消", Location = new Point(378, 254), Size = new Size(84, 32) };
+            var cancelButton = new Button { Text = "取消", Location = new Point(378, 296), Size = new Size(84, 32) };
             cancelButton.Click += delegate { Close(); };
 
             Controls.AddRange(new Control[]
             {
                 intervalLabel, _intervalBox, thresholdLabel, _thresholdBox,
                 styleLabel, _numericRadio, _simpleRadio,
-                _popupOnClickBox, _autoStartBox,
+                _popupOnClickBox, _autoStartBox, logLabel, _logCombo,
                 note, saveButton, cancelButton
             });
 
@@ -93,6 +109,10 @@ namespace GPW2BatteryShow
             _settings.IconStyle = _numericRadio.Checked ? "numeric" : "simple";
             AppSettings.SetAutoStart(_autoStartBox.Checked);
             _settings.PopupOnClick = _popupOnClickBox.Checked;
+            _settings.LogRetention = new[]
+            {
+                "session", "7days", "30days", "all"
+            }[_logCombo.SelectedIndex];
             _settings.Save();
             if (_onApplied != null)
             {

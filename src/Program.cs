@@ -36,7 +36,9 @@ namespace GPW2BatteryShow
                 new System.Windows.Forms.WindowsFormsSynchronizationContext());
             try
             {
-                Application.Run(new TrayContext(AppSettings.Load()));
+                AppSettings settings = AppSettings.Load();
+                Logger.Initialize(settings.LogRetention);   // 每次运行生成独立日志文件
+                Application.Run(new TrayContext(settings));
             }
             catch (Exception ex)
             {

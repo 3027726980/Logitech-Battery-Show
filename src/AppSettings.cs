@@ -13,6 +13,7 @@ namespace GPW2BatteryShow
         public int LowBatteryThreshold = 20;      // 低电量通知阈值（%）
         public string IconStyle = "numeric";      // numeric | simple
         public bool PopupOnClick = true;          // 左键单击是否展开电量卡片
+        public string LogRetention = "7days";     // session | 7days | 30days | all
 
         private static string ConfigDirectory
         {
@@ -53,6 +54,10 @@ namespace GPW2BatteryShow
                         {
                             settings.PopupOnClick = Convert.ToBoolean(value);
                         }
+                        if (raw.TryGetValue("log_retention", out value))
+                        {
+                            settings.LogRetention = Convert.ToString(value);
+                        }
                     }
                     if (settings.PollIntervalSec < 10) settings.PollIntervalSec = 10;
                     if (settings.LowBatteryThreshold < 5) settings.LowBatteryThreshold = 5;
@@ -60,6 +65,11 @@ namespace GPW2BatteryShow
                     if (settings.IconStyle != "numeric" && settings.IconStyle != "simple")
                     {
                         settings.IconStyle = "numeric";   // combo 样式已移除，存量配置回退
+                    }
+                    if (settings.LogRetention != "session" && settings.LogRetention != "7days"
+                        && settings.LogRetention != "30days" && settings.LogRetention != "all")
+                    {
+                        settings.LogRetention = "7days";
                     }
                     return settings;
                 }
@@ -98,7 +108,8 @@ namespace GPW2BatteryShow
                     { "poll_interval_sec", PollIntervalSec },
                     { "low_battery_threshold", LowBatteryThreshold },
                     { "icon_style", IconStyle },
-                    { "popup_on_click", PopupOnClick }
+                    { "popup_on_click", PopupOnClick },
+                    { "log_retention", LogRetention }
                 };
                 File.WriteAllText(ConfigPath, serializer.Serialize(raw));
             }

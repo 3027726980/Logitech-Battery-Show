@@ -265,6 +265,7 @@ namespace GPW2BatteryShow
             {
                 _failStreak = 0;
                 _timer.Interval = 1000;   // 保存后 1 秒内按新配置刷新
+                Logger.Cleanup(_settings.LogRetention);   // 立即按新策略清理
                 RedrawIcon(LastReading);
             });
             _panel.Show();
