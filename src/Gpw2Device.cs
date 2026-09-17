@@ -75,6 +75,10 @@ namespace GPW2BatteryShow
                         bool charging;
                         if (TryParseAnswer(_featureId, resp, out percent, out charging))
                         {
+                            if (_deviceIndex == DirectIndex)
+                            {
+                                charging = true;   // 有线直连即外接电源（0x1004 本身无充电位）
+                            }
                             _lastPercent = percent;
                             return new BatteryReading
                             {
@@ -157,11 +161,21 @@ namespace GPW2BatteryShow
                     continue;
                 }
 
+                // 直连优先：有线鼠标（GPW2 充电线插电脑）会对 0xFF 和全部 slot 都应答，
+                // 必须先判定直连，否则会被误绑到 slot 1-6
                 ProbeResult direct = ProbeOn(streams, DirectIndex);
-                ProbeResult probed = null;
+                if (direct != null)
+                {
+                    _streams = streams;
+                    _deviceIndex = DirectIndex;
+                    _featureIndex = direct.FeatureIndex;
+                    _featureId = direct.FeatureId;
+                    Logger.Write(string.Format("直连模式: feature=0x{0:X4}", direct.FeatureId));
+                    return;
+                }
                 foreach (int slot in ReceiverSlots)
                 {
-                    probed = ProbeOn(streams, (byte)slot);
+                    ProbeResult probed = ProbeOn(streams, (byte)slot);
                     if (probed != null)
                     {
                         _streams = streams;
@@ -173,15 +187,6 @@ namespace GPW2BatteryShow
                         return;
                     }
                 }
-                if (direct != null)
-                {
-                    _streams = streams;
-                    _deviceIndex = DirectIndex;
-                    _featureIndex = direct.FeatureIndex;
-                    _featureId = direct.FeatureId;
-                    Logger.Write(string.Format("直连模式: feature=0x{0:X4}", direct.FeatureId));
-                    return;
-                }
                 foreach (OpenedStream s in streams)
                 {
                     try { s.Stream.Dispose(); }
@@ -192,8 +197,17 @@ namespace GPW2BatteryShow
 
         private static string InterfaceKey(string devicePath)
         {
-            Match m = Regex.Match(devicePath ?? string.Empty, @"mi_(\d+)", RegexOptions.IgnoreCase);
-            return m.Success ? ("mi_" + m.Groups[1].Value) : (devicePath ?? string.Empty);
+            // 分组必须同时含 PID 与 interface：真机实测充电线插入后出现有线鼠标
+            // 接口（PID 0xC09B），与接收器（PID 0xC547）同为 mi_02，若只按 mi 分组
+            // 会把两个物理设备混进同一组导致应答交错
+            string path = devicePath ?? string.Empty;
+            Match pid = Regex.Match(path, @"pid_([0-9a-f]+)", RegexOptions.IgnoreCase);
+            Match mi = Regex.Match(path, @"mi_(\d+)", RegexOptions.IgnoreCase);
+            if (pid.Success && mi.Success)
+            {
+                return pid.Groups[1].Value + "&mi_" + mi.Groups[1].Value;
+            }
+            return path;
         }
 
 
