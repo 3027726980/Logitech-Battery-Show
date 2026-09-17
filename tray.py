@@ -89,17 +89,21 @@ def draw_icon(percent: int | None, charging: bool, online: bool,
 
 
 # ---- 托盘应用组装 ----
+import threading
+
 import pystray
 
 from config import get_auto_start, save_config, set_auto_start
-from devices import BatteryState
+from devices import BatteryState, DeviceManager
 
 
 class TrayApp:
     """pystray 托盘应用：图标、tooltip、右键菜单、气泡通知。"""
 
-    def __init__(self, cfg: dict):
+    def __init__(self, cfg: dict, manager: DeviceManager | None = None):
         self.cfg = cfg
+        self.manager = manager if manager is not None else DeviceManager()
+        self._refresh_lock = threading.Lock()
         self._state = BatteryState()
         self.icon = pystray.Icon(
             "GPW2BatteryShow",
@@ -126,9 +130,16 @@ class TrayApp:
         )
 
     def _refresh(self, icon, item):
-        # 直接同步读一次并刷新（hid 查询耗时约 0.1-0.8s，可接受）
-        from devices import DeviceManager
-        self.update(DeviceManager().read_battery())
+        """立即刷新：HID 查询可达数秒，后台线程执行，绝不阻塞托盘 UI 线程。"""
+        threading.Thread(target=self._refresh_async, daemon=True).start()
+
+    def _refresh_async(self):
+        if not self._refresh_lock.acquire(blocking=False):
+            return   # 已有刷新在进行，跳过本次
+        try:
+            self.update(self.manager.read_battery())
+        finally:
+            self._refresh_lock.release()
 
     def _set_numeric(self, icon, item):
         self._set_style("numeric")

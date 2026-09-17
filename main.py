@@ -48,8 +48,9 @@ def poll_loop(app: TrayApp, manager: DeviceManager, cfg: dict):
 def main():
     cfg = load_config()
     _setup_logging(cfg)
-    app = TrayApp(cfg)
-    threading.Thread(target=poll_loop, args=(app, DeviceManager(), cfg),
+    manager = DeviceManager()          # 轮询线程与手动刷新共用，避免重复探测
+    app = TrayApp(cfg, manager)
+    threading.Thread(target=poll_loop, args=(app, manager, cfg),
                      daemon=True).start()
     app.run()
 

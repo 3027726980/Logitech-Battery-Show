@@ -125,17 +125,17 @@ class DeviceManager:
 
         注意：ping 无应答或收到 0x8F 错误帧（真机实测空 slot 行为）都视为离线。
         """
-        ping_resp = self._query_on(handles, build_ping(index))
+        ping_resp = self._query_on(handles, build_ping(index), timeout_ms=400)
         if ping_resp is None or is_hidpp1_error(ping_resp):
             return None
         for fid in BATTERY_FEATURE_IDS:
-            resp = self._query_on(handles, build_get_feature(index, fid))
+            resp = self._query_on(handles, build_get_feature(index, fid), timeout_ms=400)
             if resp is None or is_error(resp):
                 continue
             fidx = parse_feature_index_response(resp)
             if not fidx:
                 continue
-            resp = self._query_on(handles, build_battery_request(index, fidx))
+            resp = self._query_on(handles, build_battery_request(index, fidx), timeout_ms=400)
             if resp is not None and not is_error(resp):
                 return fidx, fid
         return None
