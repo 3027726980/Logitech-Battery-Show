@@ -16,6 +16,7 @@ namespace GPW2BatteryShow
         private readonly RadioButton _comboRadio;
         private readonly RadioButton _simpleRadio;
         private readonly CheckBox _autoStartBox;
+        private readonly CheckBox _popupOnClickBox;
 
         public ControlPanel(AppSettings settings, Action onApplied)
         {
@@ -49,6 +50,14 @@ namespace GPW2BatteryShow
                 Checked = AppSettings.GetAutoStart()
             };
 
+            _popupOnClickBox = new CheckBox
+            {
+                Text = "左键单击托盘图标时展开电量卡片",
+                AutoSize = true,
+                Location = new Point(20, 130),
+                Checked = settings.PopupOnClick
+            };
+
             var note = new Label
             {
                 Text = "提示：轮询过快会干扰鼠标省电休眠，保持默认 60 秒即可。",
@@ -68,7 +77,7 @@ namespace GPW2BatteryShow
             {
                 intervalLabel, _intervalBox, thresholdLabel, _thresholdBox,
                 styleLabel, _numericRadio, _comboRadio, _simpleRadio, _autoStartBox,
-                note, saveButton, cancelButton
+                _popupOnClickBox, note, saveButton, cancelButton
             });
 
             AcceptButton = saveButton;
@@ -83,6 +92,7 @@ namespace GPW2BatteryShow
                 : _comboRadio.Checked ? "combo" : "simple";
             _settings.Save();
             AppSettings.SetAutoStart(_autoStartBox.Checked);
+            _settings.PopupOnClick = _popupOnClickBox.Checked;
             if (_onApplied != null)
             {
                 _onApplied();

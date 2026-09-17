@@ -35,7 +35,7 @@ namespace GPW2BatteryShow
             {
                 Checked = _settings.IconStyle == "numeric"
             };
-            var comboItem = new ToolStripMenuItem("电池+数字")
+            var comboItem = new ToolStripMenuItem("综合")
             {
                 Checked = _settings.IconStyle == "combo"
             };
@@ -103,7 +103,7 @@ namespace GPW2BatteryShow
             };
             _tray.MouseClick += delegate(object sender, MouseEventArgs e)
             {
-                if (e.Button == MouseButtons.Left)
+                if (e.Button == MouseButtons.Left && _settings.PopupOnClick)
                 {
                     ShowPopup();
                 }

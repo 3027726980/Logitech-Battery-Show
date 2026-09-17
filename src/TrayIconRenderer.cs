@@ -151,9 +151,9 @@ namespace GPW2BatteryShow
         }
 
         /// <summary>
-        /// 电池+数字组合（combo）：电池轮廓占满画布（1,6)-(28,28)，
-        /// 内部上方嵌数字、底部一条随电量伸缩的填充长条。
-        /// 充电时数字与长条均变青色。
+        /// 综合（combo）：电池轮廓占满画布（1,6)-(28,28)，
+        /// 内部上方嵌前景色数字（深浅任务栏自适应，清晰可读）、
+        /// 底部一条随电量伸缩的状态色填充长条。
         /// </summary>
         private static void DrawComboBattery(Graphics g, Color foreground, Color accent, int percent)
         {
@@ -166,7 +166,7 @@ namespace GPW2BatteryShow
                 g.FillRectangle(brush, 29, 12, 3, 10);   // 正极凸起
             }
 
-            // 底部电量填充长条（内框宽 24，随电量伸缩）
+            // 底部电量填充长条（状态色，内框宽 24，随电量伸缩）
             int barMaxWidth = 24;
             int barWidth = (int)Math.Round(barMaxWidth * Math.Min(percent, 100) / 100.0);
             using (Brush brush = new SolidBrush(accent))
@@ -174,7 +174,7 @@ namespace GPW2BatteryShow
                 g.FillRectangle(brush, 3, 23, barWidth, 4);
             }
 
-            // 数字放上半区（三位数缩字号）
+            // 数字放上半区，用前景色（白/黑自适应）保证清晰
             string text = percent.ToString();
             int fontSize = text.Length >= 3 ? 11 : 14;
             using (Font font = new Font("Segoe UI", fontSize, FontStyle.Bold, GraphicsUnit.Pixel))
@@ -182,7 +182,7 @@ namespace GPW2BatteryShow
                 SizeF size = g.MeasureString(text, font);
                 float x = (1 + 28) / 2f - size.Width / 2f;
                 float y = 7f + (15f - size.Height) / 2f;
-                using (Brush brush = new SolidBrush(accent))
+                using (Brush brush = new SolidBrush(foreground))
                 {
                     g.DrawString(text, font, brush, x, y);
                 }

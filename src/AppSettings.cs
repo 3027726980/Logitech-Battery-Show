@@ -11,7 +11,8 @@ namespace GPW2BatteryShow
     {
         public int PollIntervalSec = 60;          // 轮询间隔（过小会干扰鼠标省电休眠）
         public int LowBatteryThreshold = 20;      // 低电量通知阈值（%）
-        public string IconStyle = "numeric";      // numeric | simple
+        public string IconStyle = "numeric";      // numeric | combo | simple
+        public bool PopupOnClick = true;          // 左键单击是否展开电量卡片
 
         private static string ConfigDirectory
         {
@@ -47,6 +48,10 @@ namespace GPW2BatteryShow
                         if (raw.TryGetValue("icon_style", out value))
                         {
                             settings.IconStyle = Convert.ToString(value);
+                        }
+                        if (raw.TryGetValue("popup_on_click", out value))
+                        {
+                            settings.PopupOnClick = Convert.ToBoolean(value);
                         }
                     }
                     if (settings.PollIntervalSec < 10) settings.PollIntervalSec = 10;
@@ -93,7 +98,8 @@ namespace GPW2BatteryShow
                 {
                     { "poll_interval_sec", PollIntervalSec },
                     { "low_battery_threshold", LowBatteryThreshold },
-                    { "icon_style", IconStyle }
+                    { "icon_style", IconStyle },
+                    { "popup_on_click", PopupOnClick }
                 };
                 File.WriteAllText(ConfigPath, serializer.Serialize(raw));
             }
