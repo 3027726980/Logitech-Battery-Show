@@ -623,6 +623,7 @@ namespace GPW2BatteryShow
                 return null;
             }
             long writeMs = qsw.ElapsedMilliseconds;
+            int staleSkipped = 0;   // 队列杂帧过滤计数（限量打日志防刷屏）
             // 小步快轮询：每句柄单次 read 最多阻塞 120ms（ReadTimeout），
             // 总时长受 deadline 约束。应答无论先出现在哪个 collection、何时到达，
             // 都能在 120ms 内被捕获（长帧在 Col02、短帧在 Col01 的真机行为下
@@ -666,9 +667,30 @@ namespace GPW2BatteryShow
                     {
                         continue;
                     }
+                    // 严格回显校验：正常应答的 payload[2] 与请求的 request[2]
+                    //（(function<<4)|SwId）完全一致。新开句柄的 HID 队列里常积压
+                    // 枚举期间的杂帧（设备通知/陈旧应答），设备索引和 SwId 低 4 位
+                    // 恰好能通过上面的检查，但 func 回显不会匹配，据此过滤。
+                    // 真机教训：插线瞬间的杂帧被误当 func1 应答，解析出 60% 假电量。
+                    if (payload[2] != request[2])
+                    {
+                        staleSkipped++;
+                        if (staleSkipped <= 2)
+                        {
+                            Logger.Write(string.Format(
+                                "  QueryOn: 跳过非预期帧 p2=0x{0:X2}(期望 0x{1:X2}) p={2:X2} {3:X2} {4:X2} {5:X2} {6:X2} {7:X2}",
+                                payload[2], request[2],
+                                payload[0], payload[1], payload[2], payload[3],
+                                payload.Length > 4 ? payload[4] : (byte)0,
+                                payload.Length > 5 ? payload[5] : (byte)0));
+                        }
+                        continue;
+                    }
                     Logger.Write(string.Format(
-                        "  QueryOn: write={0}ms, 应答在 {1}ms 到达（长帧={2}）",
-                        writeMs, qsw.ElapsedMilliseconds, buffer[0] == 0x11));
+                        "  QueryOn: write={0}ms, 应答在 {1}ms 到达（长帧={2}，参数区 {3:X2} {4:X2} {5:X2} {6:X2}）",
+                        writeMs, qsw.ElapsedMilliseconds, buffer[0] == 0x11,
+                        payload[3], payload[4], payload[5],
+                        payload.Length > 6 ? payload[6] : (byte)0));
                     outcome = QueryOutcome.Answer;
                     return payload;
                 }
