@@ -14,6 +14,8 @@ namespace GPW2BatteryShow
         public string IconStyle = "numeric";      // numeric | simple
         public bool PopupOnClick = true;          // 左键单击是否展开电量卡片
         public string LogRetention = "7days";     // session | 7days | 30days | all
+        public bool OfflineGraceEnabled = false;  // 拔线宽限期显示（默认关闭，探测已足够快）
+        public int OfflineGraceSec = 3;           // 宽限时长（秒，1-30，开启时默认 3）
 
         /// <summary>配置目录：跟随 exe 所在目录（便携式风格；日志则在同级的 logs 子目录）。</summary>
         private static string ConfigDirectory
@@ -59,6 +61,14 @@ namespace GPW2BatteryShow
                         {
                             settings.LogRetention = Convert.ToString(value);
                         }
+                        if (raw.TryGetValue("offline_grace_enabled", out value))
+                        {
+                            settings.OfflineGraceEnabled = Convert.ToBoolean(value);
+                        }
+                        if (raw.TryGetValue("offline_grace_sec", out value))
+                        {
+                            settings.OfflineGraceSec = Convert.ToInt32(value);
+                        }
                     }
                     if (settings.PollIntervalSec < 10) settings.PollIntervalSec = 10;
                     if (settings.LowBatteryThreshold < 5) settings.LowBatteryThreshold = 5;
@@ -72,6 +82,8 @@ namespace GPW2BatteryShow
                     {
                         settings.LogRetention = "7days";
                     }
+                    if (settings.OfflineGraceSec < 1) settings.OfflineGraceSec = 1;
+                    if (settings.OfflineGraceSec > 30) settings.OfflineGraceSec = 30;
                     return settings;
                 }
             }
@@ -110,7 +122,9 @@ namespace GPW2BatteryShow
                     { "low_battery_threshold", LowBatteryThreshold },
                     { "icon_style", IconStyle },
                     { "popup_on_click", PopupOnClick },
-                    { "log_retention", LogRetention }
+                    { "log_retention", LogRetention },
+                    { "offline_grace_enabled", OfflineGraceEnabled },
+                    { "offline_grace_sec", OfflineGraceSec }
                 };
                 File.WriteAllText(ConfigPath, serializer.Serialize(raw));
             }

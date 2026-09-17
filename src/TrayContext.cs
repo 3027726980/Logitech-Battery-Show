@@ -27,12 +27,9 @@ namespace GPW2BatteryShow
         private int? _lastOkPercent;
         private int _failStreak;
 
-        // 拔线宽限期：有线拔出（或接收器链路瞬断）后，鼠标切回无线需数秒链路重建，
-        // 期间托盘保持最后在线显示，避免"在线→离线→在线"跳变；
-        // 宽限期内若探测到接收器在线则无缝切换为接收器状态。
-        // 时长 10s = 热插拔即时重试 + 3s×3 定时重试的窗口（链路重建实测 <3s）；
-        // 再长会让真被拿去充电的设备长时间假在线。
-        private static readonly TimeSpan OfflineGracePeriod = TimeSpan.FromSeconds(10);
+        // 拔线宽限期（可选，控制面板开关）：有线拔出后鼠标切回无线需数秒链路重建，
+        // 开启后托盘立即显示接收器并保留最后电量，宽限超时才显示离线；
+        // 接收器断联不受宽限期影响，直接显示离线。默认关闭（探测已足够快）。
         private BatteryReading _lastOnlineReading;     // 最后一次在线读数（宽限期显示用）
         private BatteryReading _displayReading;        // 当前应显示的读数（宽限期内 = 最后在线读数）
         private bool _offline;                         // 当前离线态（检测离线起始沿）
@@ -196,9 +193,10 @@ namespace GPW2BatteryShow
                 // 宽限期仅覆盖"有线直连拔线"场景：拔线后鼠标几乎必然切回无线接收器，
                 // 值得等待；接收器模式断联（关机/拿远/接收器拔出）无从判断何时回来，
                 // 直接显示离线（真实优先，控制面板底部可对照真实状态）。
-                if (_lastOnlineReading != null
+                if (_settings.OfflineGraceEnabled
+                    && _lastOnlineReading != null
                     && _lastOnlineReading.Source == "有线直连"
-                    && DateTime.Now - _offlineSince < OfflineGracePeriod)
+                    && DateTime.Now - _offlineSince < TimeSpan.FromSeconds(_settings.OfflineGraceSec))
                 {
                     // 拔线即视为回到接收器模式：立刻把显示源切为"接收器"（数值保持最后已知，
                     // 充电标志清除——线已拔不可能仍在充电），而不是继续显示"有线直连·充电中"

@@ -24,6 +24,8 @@ namespace GPW2BatteryShow
         private readonly CheckBox _autoStartBox;
         private readonly CheckBox _popupOnClickBox;
         private readonly ComboBox _logCombo;
+        private readonly CheckBox _graceBox;
+        private readonly NumericUpDown _graceSecBox;
         private readonly Func<BatteryRealtimeStatus> _statusProvider;
         private readonly Label _statusDot;
         private readonly Label _statusText;
@@ -43,7 +45,7 @@ namespace GPW2BatteryShow
             MaximizeBox = false;
             MinimizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(480, 372);
+            ClientSize = new Size(480, 428);
             Font = new Font("Microsoft YaHei UI", 9.5f);
 
             int labelX = 22;
@@ -89,19 +91,51 @@ namespace GPW2BatteryShow
                 : settings.LogRetention == "30days" ? 2
                 : settings.LogRetention == "all" ? 3 : 1;
 
+            // 拔线宽限期（可选体验项，默认关闭）
+            _graceBox = new CheckBox
+            {
+                Text = "拔线宽限期显示",
+                AutoSize = true,
+                Location = new Point(labelX, 252),
+                Checked = settings.OfflineGraceEnabled
+            };
+            _graceSecBox = new NumericUpDown
+            {
+                Location = new Point(inputX, 248),
+                Size = new Size(80, 28),
+                Minimum = 1,
+                Maximum = 30,
+                Value = settings.OfflineGraceSec,
+                Enabled = settings.OfflineGraceEnabled
+            };
+            var graceSecLabel = new Label { Text = "秒", AutoSize = true, Location = new Point(inputX + 88, 252) };
+            var graceDesc = new Label
+            {
+                Text = "拔掉充电线后鼠标切回无线需要几秒。开启后托盘立即显示\"接收器\"并保留最后电量，\n超过宽限时长仍未收到数据才显示离线。仅对拔线生效；接收器断联（关机/拿远）直接显示离线。",
+                Font = new Font("Microsoft YaHei UI", 8f),
+                ForeColor = Color.FromArgb(120, 123, 128),
+                AutoSize = true,
+                Location = new Point(labelX, 280)
+            };
+            _graceBox.CheckedChanged += delegate
+            {
+                _graceSecBox.Enabled = _graceBox.Checked;
+                graceSecLabel.Enabled = _graceBox.Checked;
+            };
+
             var note = new Label
             {
                 Text = "提示：轮询过快会干扰鼠标省电休眠，保持默认 60 秒即可。日志位于程序目录 logs 文件夹。",
                 Font = new Font("Microsoft YaHei UI", 8f),
                 ForeColor = Color.FromArgb(120, 123, 128),
                 AutoSize = true,
-                Location = new Point(labelX, 258)
+                Location = new Point(labelX, 320)
             };
 
-            var saveButton = new Button { Text = "保存", Location = new Point(288, 296), Size = new Size(84, 32) };
+            var saveButton = new Button { Text = "保存", Location = new Point(288, 352), Size = new Size(84, 32) };
             saveButton.Click += delegate { SaveAndClose(); };
 
-            var cancelButton = new Button { Text = "取消", Location = new Point(378, 296), Size = new Size(84, 32) };
+            var cancelButton = new Button { Text = "取消", Location = new Point(378, 352), Size = new Size(84, 32) };
             cancelButton.Click += delegate { Close(); };
 
             // 底部真实状态行：检测中转圈 / 在线绿点 / 离线灰点。
@@ -110,7 +144,7 @@ namespace GPW2BatteryShow
             {
                 Text = "◐",
                 AutoSize = true,
-                Location = new Point(labelX, 338),
+                Location = new Point(labelX, 394),
                 Font = new Font("Microsoft YaHei UI", 10f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(120, 123, 128)
             };
@@ -118,7 +152,7 @@ namespace GPW2BatteryShow
             {
                 Text = "检测中…",
                 AutoSize = true,
-                Location = new Point(labelX + 26, 341),
+                Location = new Point(labelX + 26, 397),
                 Font = new Font("Microsoft YaHei UI", 9f),
                 ForeColor = Color.FromArgb(120, 123, 128)
             };
@@ -136,6 +170,7 @@ namespace GPW2BatteryShow
                 intervalLabel, _intervalBox, thresholdLabel, _thresholdBox,
                 styleLabel, _numericRadio, _simpleRadio,
                 _popupOnClickBox, _autoStartBox, logLabel, _logCombo,
+                _graceBox, _graceSecBox, graceSecLabel, graceDesc,
                 note, saveButton, cancelButton,
                 _statusDot, _statusText
             });
@@ -194,6 +229,8 @@ namespace GPW2BatteryShow
             {
                 "session", "7days", "30days", "all"
             }[_logCombo.SelectedIndex];
+            _settings.OfflineGraceEnabled = _graceBox.Checked;
+            _settings.OfflineGraceSec = (int)_graceSecBox.Value;
             _settings.Save();
             if (_onApplied != null)
             {
