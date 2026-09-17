@@ -132,6 +132,9 @@ namespace GPW2BatteryShow
                     int percent; bool charging; bool externalPower;
                     if (TryParseAnswer(resp, out percent, out charging, out externalPower))
                     {
+                        // 接收器（无线）模式物理上不存在充电（插线即直连模式），
+                        // 充电标志仅在直连模式下有效；顺带免疫形态切换时残留的陈旧应答
+                        charging = _deviceIndex == DirectIndex && charging;
                         Logger.Write(string.Format(
                             "ReadBattery: 成功 {0}% charging={1} ext={2} 耗时 {3}ms",
                             percent, charging, externalPower, sw.ElapsedMilliseconds));
@@ -261,10 +264,14 @@ namespace GPW2BatteryShow
             };
             if (result.HasReading)
             {
+                // 充电标志仅在直连模式下有效（接收器无线模式物理上不存在充电），
+                // 探测读数同样过滤，免疫形态切换瞬间残留的陈旧充电应答
                 _probeReading = new BatteryReading
                 {
-                    Percent = result.Percent, Charging = result.Charging,
-                    Online = true, Source = source
+                    Percent = result.Percent,
+                    Charging = deviceIndex == DirectIndex && result.Charging,
+                    Online = true,
+                    Source = source
                 };
             }
             // else：在线已确认但电量读取失败（链路重建中）——不设探测读数，
