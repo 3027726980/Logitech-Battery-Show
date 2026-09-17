@@ -195,7 +195,17 @@ namespace GPW2BatteryShow
                 }
                 if (_lastOnlineReading != null && DateTime.Now - _offlineSince < OfflineGracePeriod)
                 {
-                    display = _lastOnlineReading;
+                    // 拔线即视为回到接收器模式：立刻把显示源切为"接收器"（数值保持最后已知，
+                    // 充电标志清除——线已拔不可能仍在充电），而不是继续显示"有线直连·充电中"
+                    // 造成"一直没变成接收器"的错觉。宽限期内探测到接收器在线数据后无缝
+                    // 替换为真实读数；超时仍未收到才显示断开。
+                    display = new BatteryReading
+                    {
+                        Percent = _lastOnlineReading.Percent,
+                        Charging = false,
+                        Online = true,
+                        Source = "接收器"
+                    };
                 }
             }
             _displayReading = display;
