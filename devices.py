@@ -14,7 +14,7 @@ import hid
 from hidpp import (
     BATTERY_FEATURE_IDS, BATTERY_STATUS_ID,
     build_battery_request, build_get_feature, build_ping,
-    extract_payload, is_error, parse_battery_status,
+    extract_payload, is_error, is_hidpp1_error, parse_battery_status,
     parse_adc_measurement, parse_feature_index_response, SW_ID,
 )
 
@@ -103,8 +103,12 @@ class DeviceManager:
         self._feature_index, self._feature_id = probed
 
     def _probe_on(self, dev, index):
-        """探测指定 index 上是否有带电量功能的设备 → (feature_index, feature_id) | None"""
-        if self._query_on(dev, build_ping(index)) is None:
+        """探测指定 index 上是否有带电量功能的设备 → (feature_index, feature_id) | None
+
+        注意：ping 无应答或收到 0x8F 错误帧（真机实测空 slot 行为）都视为离线。
+        """
+        ping_resp = self._query_on(dev, build_ping(index))
+        if ping_resp is None or is_hidpp1_error(ping_resp):
             return None
         for fid in BATTERY_FEATURE_IDS:
             resp = self._query_on(dev, build_get_feature(index, fid))

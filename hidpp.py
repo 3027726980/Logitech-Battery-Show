@@ -60,6 +60,15 @@ def is_error(payload: bytes) -> bool:
     return len(payload) >= 4 and payload[1] == 0xFF and payload[2] == 0x02
 
 
+def is_hidpp1_error(payload: bytes) -> bool:
+    """HID++ 1.0 错误应答：payload[1] == 0x8F，payload[4] 为错误码。
+
+    真机实测（C547 LIGHTSPEED 接收器）：对空 slot 或接收器自身发请求，
+    接收器会代回 0x8F 错误帧而非静默超时，需与有效应答严格区分。
+    """
+    return len(payload) >= 4 and payload[1] == 0x8F
+
+
 # ---- 应答解析 ----
 
 # 锂电 (3.7V 标称) 分段线性曲线: (电压 mV, 百分比)

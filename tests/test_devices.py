@@ -5,6 +5,7 @@ from fakes import FakeDevice, FakeHid
 # 常用请求帧
 REQ_PING_0xFF = bytes.fromhex("10FF0011000000")        # ping 直连
 REQ_PING_SLOT2 = bytes.fromhex("10020011000000")       # ping slot 2
+REQ_PING_SLOT3 = bytes.fromhex("10030011000000")       # ping slot 3
 REQ_FEATURE_0xFF = bytes.fromhex("10FF0001100000")     # 0xFF 查询 0x1000
 REQ_FEATURE_SLOT2 = bytes.fromhex("10020001100000")    # slot2 查询 0x1000
 REQ_BATT_0xFF_I06 = bytes.fromhex("10FF0601000000")    # 0xFF 用 feature index 6 查电量
@@ -84,5 +85,21 @@ class TestNoDevice:
             REQ_FEATURE_0xFF: ERR_NOT_FOUND,
         })
         mgr = DeviceManager(hidapi=FakeHid([make_interface("\\\\hid#1", dev=dev)]))
+        state = mgr.read_battery()
+        assert (state.percent, state.online) == (None, False)
+
+
+class TestRealWorldReceiverBehavior:
+    """基于 C547 LIGHTSPEED 接收器真机实测的回归用例。"""
+
+    def test_empty_slot_hidpp1_error_frame_not_online(self):
+        # 真机实测：空 slot 的 ping 会收到 0x8F 错误帧（而非静默超时），
+        # 必须判定为离线，绝不能绑定到空 slot
+        dev = FakeDevice(responses={
+            REQ_PING_0xFF: bytes([0xFF, 0x8F, 0x00, 0x11, 0x01, 0x00]),
+            REQ_PING_SLOT2: bytes([0x02, 0x8F, 0x00, 0x11, 0x08, 0x00]),
+            REQ_PING_SLOT3: bytes([0x03, 0x8F, 0x00, 0x11, 0x08, 0x00]),
+        })
+        mgr = DeviceManager(hidapi=FakeHid([make_interface("\\hid#recv", 0xFF00, dev)]))
         state = mgr.read_battery()
         assert (state.percent, state.online) == (None, False)

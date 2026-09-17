@@ -3,7 +3,7 @@ import pytest
 
 from hidpp import (
     build_short, build_ping, build_get_feature, build_battery_request,
-    extract_payload, is_error, SW_ID,
+    extract_payload, is_error, is_hidpp1_error, SW_ID,
 )
 
 
@@ -64,3 +64,18 @@ class TestIsError:
     def test_normal_frame_not_error(self):
         payload = bytes([0xFF, 0x06, 0x01, 86, 85, 0x00])
         assert is_error(payload) is False
+
+
+class TestHidpp1Error:
+    """真机实测（C547 LIGHTSPEED 接收器）：空 slot / 不支持请求会代回 0x8F 错误帧。"""
+
+    def test_hidpp1_error_detected(self):
+        # [ReportID剥除后] payload[1]=0x8F, payload[4]=错误码
+        assert is_hidpp1_error(bytes([0x02, 0x8F, 0x00, 0x11, 0x08, 0x00])) is True
+
+    def test_normal_ping_not_error(self):
+        assert is_hidpp1_error(bytes([0xFF, 0x00, 0x11, 0x55, 0x00, 0x00])) is False
+
+    def test_error_frame_also_detected_by_is_error(self):
+        # 2.0 错误帧与 1.0 错误帧互不误判
+        assert is_error(bytes([0x02, 0x8F, 0x00, 0x11, 0x08, 0x00])) is False
