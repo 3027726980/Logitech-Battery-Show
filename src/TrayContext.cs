@@ -21,6 +21,7 @@ namespace GPW2BatteryShow
         private ControlPanel _panel;
         private Icon _currentIcon;
         private bool _busy;                            // 后台查询去重
+        private bool _pendingRefresh;                  // 忙碌期间有热插拔事件请求刷新
         private bool _notified;                        // 低电量通知防骚扰
         private int? _lastOkPercent;
         private int _failStreak;
@@ -115,6 +116,7 @@ namespace GPW2BatteryShow
         {
             if (_busy)
             {
+                _pendingRefresh = true;   // 热插拔事件密集时首个事件处理完后立即补跑
                 return;
             }
             _busy = true;
@@ -128,6 +130,11 @@ namespace GPW2BatteryShow
                     ? task.Result
                     : BatteryReading.Offline(null);
                 ApplyReading(reading);
+                if (_pendingRefresh)
+                {
+                    _pendingRefresh = false;
+                    BeginRefresh();
+                }
             }, TaskScheduler.FromCurrentSynchronizationContext());
         }
 
