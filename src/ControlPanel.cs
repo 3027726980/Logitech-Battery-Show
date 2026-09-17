@@ -45,7 +45,7 @@ namespace GPW2BatteryShow
             MaximizeBox = false;
             MinimizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(480, 428);
+            ClientSize = new Size(480, 444);
             Font = new Font("Microsoft YaHei UI", 9.5f);
 
             int labelX = 22;
@@ -111,11 +111,11 @@ namespace GPW2BatteryShow
             var graceSecLabel = new Label { Text = "秒", AutoSize = true, Location = new Point(inputX + 88, 252) };
             var graceDesc = new Label
             {
-                Text = "拔掉充电线后鼠标切回无线需要几秒。开启后托盘立即显示\"接收器\"并保留最后电量，\n超过宽限时长仍未收到数据才显示离线。仅对拔线生效；接收器断联（关机/拿远）直接显示离线。",
+                Text = "拔掉充电线后鼠标切回无线需要几秒。开启后托盘会立即显示\"接收器\"\n并保留最后电量，超过宽限时长仍未收到数据才显示离线。\n仅对拔线生效；接收器断联（关机/拿远）直接显示离线。",
                 Font = new Font("Microsoft YaHei UI", 8f),
                 ForeColor = Color.FromArgb(120, 123, 128),
                 AutoSize = true,
-                Location = new Point(labelX, 280)
+                Location = new Point(labelX, 278)
             };
             _graceBox.CheckedChanged += delegate
             {
@@ -129,13 +129,13 @@ namespace GPW2BatteryShow
                 Font = new Font("Microsoft YaHei UI", 8f),
                 ForeColor = Color.FromArgb(120, 123, 128),
                 AutoSize = true,
-                Location = new Point(labelX, 320)
+                Location = new Point(labelX, 342)
             };
 
-            var saveButton = new Button { Text = "保存", Location = new Point(288, 352), Size = new Size(84, 32) };
+            var saveButton = new Button { Text = "保存", Location = new Point(288, 372), Size = new Size(84, 32) };
             saveButton.Click += delegate { SaveAndClose(); };
 
-            var cancelButton = new Button { Text = "取消", Location = new Point(378, 352), Size = new Size(84, 32) };
+            var cancelButton = new Button { Text = "取消", Location = new Point(378, 372), Size = new Size(84, 32) };
             cancelButton.Click += delegate { Close(); };
 
             // 底部真实状态行：检测中转圈 / 在线绿点 / 离线灰点。
@@ -144,7 +144,7 @@ namespace GPW2BatteryShow
             {
                 Text = "◐",
                 AutoSize = true,
-                Location = new Point(labelX, 394),
+                Location = new Point(labelX, 414),
                 Font = new Font("Microsoft YaHei UI", 10f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(120, 123, 128)
             };
@@ -152,7 +152,7 @@ namespace GPW2BatteryShow
             {
                 Text = "检测中…",
                 AutoSize = true,
-                Location = new Point(labelX + 26, 397),
+                Location = new Point(labelX + 26, 417),
                 Font = new Font("Microsoft YaHei UI", 9f),
                 ForeColor = Color.FromArgb(120, 123, 128)
             };
