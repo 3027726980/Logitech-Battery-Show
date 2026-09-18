@@ -145,7 +145,8 @@ namespace GPW2BatteryShow
         private const int GlowWidth = 18;          // 充电流光块宽度
         private static readonly Color TrackColor = Color.FromArgb(208, 210, 214);   // 轨道：灰
         private static readonly Color ChargingColor = Color.FromArgb(76, 175, 80);  // 充电：绿
-        private static readonly Color IdleColor = Color.White;                      // 非充电：白
+        // 非充电：灰白（不能用纯白——与白色卡片背景同色会融在一起）
+        private static readonly Color IdleColor = Color.FromArgb(238, 240, 243);
         private static readonly Color GlowColor = Color.FromArgb(120, 255, 255, 255);
 
         private readonly Timer _animTimer;   // 充电流光帧驱动（非充电完全停止）
