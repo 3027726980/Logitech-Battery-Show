@@ -335,7 +335,16 @@ namespace GPW2BatteryShow
             }
 
             // ---- 全量扫描（冷却组跳过） ----
-            foreach (KeyValuePair<string, List<HidDevice>> groupEntry in groups)
+            // WiredGroupFirst: 插线后优先探测 c09b 有线接口，避免先耗时扫完接收器 slot 1-6。
+            var orderedGroups = new List<KeyValuePair<string, List<HidDevice>>>(groups);
+            orderedGroups.Sort(delegate(KeyValuePair<string, List<HidDevice>> left,
+                KeyValuePair<string, List<HidDevice>> right)
+            {
+                bool leftWired = IsWiredGroupKey(left.Key);
+                bool rightWired = IsWiredGroupKey(right.Key);
+                return rightWired.CompareTo(leftWired);
+            });
+            foreach (KeyValuePair<string, List<HidDevice>> groupEntry in orderedGroups)
             {
                 int skipsLeft;
                 if (_groupCooldown.TryGetValue(groupEntry.Key, out skipsLeft) && skipsLeft > 0)
@@ -389,6 +398,12 @@ namespace GPW2BatteryShow
                         groupEntry.Key, GroupCooldownSkips));
                 }
             }
+        }
+
+        private static bool IsWiredGroupKey(string groupKey)
+        {
+            return groupKey != null
+                && groupKey.IndexOf("c09b", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         /// <summary>对一个已打开的组做"直连优先，其次 slot 1-6"的探测与绑定。</summary>

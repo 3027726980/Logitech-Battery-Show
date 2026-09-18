@@ -14,6 +14,7 @@ namespace GPW2BatteryShow
     {
         private readonly NotifyIcon _tray;
         private readonly Timer _timer;                 // WinForms Timer（UI 线程调度）
+        private readonly Timer _hotplugDebounceTimer;  // 合并短时间内的 USB 热插拔事件
         private readonly Gpw2Device _device = new Gpw2Device();
         private readonly AppSettings _settings;
 
@@ -35,19 +36,32 @@ namespace GPW2BatteryShow
         private bool _offline;                         // 当前离线态（检测离线起始沿）
         private DateTime _offlineSince;                // 连续离线起始时刻
         private readonly TaskScheduler _uiScheduler;
+        private const int HotplugDebounceMs = 250;
+        private const int ReceiverPresenceIntervalSec = 10;
 
         public TrayContext(AppSettings settings)
         {
             _settings = settings;
             _uiScheduler = TaskScheduler.FromCurrentSynchronizationContext();
 
+            _hotplugDebounceTimer = new Timer { Interval = HotplugDebounceMs };
+            _hotplugDebounceTimer.Tick += delegate
+            {
+                _hotplugDebounceTimer.Stop();
+                BeginRefresh("热插拔防抖");
+            };
+
             // 热插拔事件驱动：接收器/鼠标插拔立即触发刷新（不再苦等轮询周期）。
-            // 事件风暴只置标志：多个事件合并为一次重探测，由 BeginRefresh 消费。
+            // 事件风暴只置标志并重置防抖计时器：多个事件合并为一次重探测。
             DeviceList.Local.Changed += delegate
             {
-                _hotplugSeen = true;
-                Logger.Write("热插拔事件触发");
-                Task.Factory.StartNew(delegate { BeginRefresh("热插拔"); },
+                Task.Factory.StartNew(delegate
+                {
+                    _hotplugSeen = true;
+                    _hotplugDebounceTimer.Stop();
+                    _hotplugDebounceTimer.Start();
+                    Logger.Write("热插拔事件触发，启动 250ms 防抖");
+                },
                     System.Threading.CancellationToken.None,
                     System.Threading.Tasks.TaskCreationOptions.None, _uiScheduler);
             };
@@ -117,9 +131,11 @@ namespace GPW2BatteryShow
                 }
             };
 
-            _timer = new Timer { Interval = 2000 };   // 启动后 2 秒内出首次读数
+            _timer = new Timer { Interval = 500 };    // 启动后约 0.5 秒开始首次读数
             _timer.Tick += delegate { BeginRefresh("定时轮询"); };
             _timer.Start();
+            // ImmediateStartupRefresh: 先立即查询，500ms 定时器只作为初始化未完成时的兜底。
+            BeginRefresh("启动");
         }
 
         private BatteryReading LastReading { get; set; }
@@ -140,7 +156,11 @@ namespace GPW2BatteryShow
                 "BeginRefresh({0}): busy={1} failStreak={2}", source, _busy, _failStreak));
             if (_busy)
             {
-                _pendingRefresh = true;   // 热插拔事件密集时首个事件处理完后立即补跑
+                // BusyRefreshPolicy: 普通轮询不排队，只有链路变化或快速失败需要补跑。
+                if (source == "热插拔防抖" || source == "快速失败补跑")
+                {
+                    _pendingRefresh = true;
+                }
                 return;
             }
             _busy = true;
@@ -224,7 +244,11 @@ namespace GPW2BatteryShow
             int seconds;
             if (reading.Online)
             {
-                seconds = _settings.PollIntervalSec;
+                // ReceiverPresenceIntervalSec: 无线接收器不会在鼠标关机时触发热插拔事件，
+                // 因此在线状态使用较短探测间隔，避免长时间保留旧状态。
+                seconds = reading.Source == "接收器"
+                    ? Math.Min(_settings.PollIntervalSec, ReceiverPresenceIntervalSec)
+                    : _settings.PollIntervalSec;
             }
             else if (_failStreak <= 3)
             {
