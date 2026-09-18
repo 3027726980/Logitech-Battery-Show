@@ -136,7 +136,7 @@ namespace GPW2BatteryShow
     /// <summary>
     /// 自绘电量条：系统 ProgressBar 的平滑动画无法关闭（非充电也要静态），
     /// 且填充色固定绿色无法变白，故自绘。
-    /// 非充电：灰色轨道 + 绿色静态填充；充电：绿色填充 + 流光动效 + 左侧小闪电。
+    /// 非充电：灰色轨道 + 白色静态填充；充电：绿色填充 + 流光动效 + 左侧小闪电。
     /// </summary>
     internal sealed class BatteryBar : Control
     {
@@ -144,7 +144,8 @@ namespace GPW2BatteryShow
         private const int CornerRadius = 3;        // 小圆角（胶囊形过圆，毛毛要求调小）
         private const int GlowWidth = 18;          // 充电流光块宽度
         private static readonly Color TrackColor = Color.FromArgb(208, 210, 214);   // 轨道：灰
-        private static readonly Color ChargingColor = Color.FromArgb(76, 175, 80);  // 填充：绿（充/非充电同色，仅动效不同）
+        private static readonly Color ChargingColor = Color.FromArgb(76, 175, 80);  // 充电：绿
+        private static readonly Color IdleColor = Color.White;                      // 非充电：白
         private static readonly Color GlowColor = Color.FromArgb(120, 255, 255, 255);
 
         private readonly Timer _animTimer;   // 充电流光帧驱动（非充电完全停止）
@@ -249,7 +250,7 @@ namespace GPW2BatteryShow
                 int fillWidth = Math.Max((int)Math.Round((track.Width - 2) * _value / 100.0), 1);
                 Rectangle fill = new Rectangle(track.X + 1, 1, fillWidth, Height - 3);
                 using (GraphicsPath fillPath = RoundedPath(fill, CornerRadius))
-                using (var brush = new SolidBrush(ChargingColor))
+                using (var brush = new SolidBrush(_charging ? ChargingColor : IdleColor))
                 {
                     g.FillPath(brush, fillPath);
                 }
